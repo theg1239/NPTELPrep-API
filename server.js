@@ -145,9 +145,8 @@ app.get('/', (req, res) => {
                 <li class="route-item"><a href="/courses">/courses</a> - List all courses</li>
                 <li class="route-item"><a href="/courses/:courseCode">/courses/:courseCode</a> - Fetch specific course details</li>
                 <li class="route-item"><a href="/view-questions">/view-questions</a> - View question counts per course</li>
-                <li class="route-item"><a href="/scrape">/scrape</a> - Scrape assignments (for local use)</li>
             </ul>
-            <div class="footer">Made with ♥ by NPTEL API Team</div>
+            <div class="footer">Made with ♥</div>
         </body>
         </html>
     `);
