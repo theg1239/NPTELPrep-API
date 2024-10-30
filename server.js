@@ -80,8 +80,79 @@ initializeDatabase();
 
 
 app.get('/', (req, res) => {
-    res.send('NPTEL API Server is running.');
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>NPTEL API Server</title>
+            <style>
+                body {
+                    background-color: #121212;
+                    color: #ffffff;
+                    font-family: 'Courier New', Courier, monospace;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    flex-direction: column;
+                    height: 100vh;
+                    margin: 0;
+                }
+                h1 {
+                    font-family: 'Press Start 2P', sans-serif; /* Game-over font style */
+                    font-size: 2em;
+                    color: #ff4757;
+                    margin-bottom: 20px;
+                }
+                h2 {
+                    font-family: 'Courier New', Courier, monospace;
+                    font-size: 1.2em;
+                    color: #f9ca24;
+                    text-align: center;
+                    margin-top: 0;
+                }
+                .route-list {
+                    list-style-type: none;
+                    padding: 0;
+                    margin-top: 20px;
+                    text-align: center;
+                }
+                .route-item {
+                    margin: 10px 0;
+                    font-size: 1.1em;
+                }
+                .route-item a {
+                    color: #1e90ff;
+                    text-decoration: none;
+                    transition: color 0.3s ease;
+                }
+                .route-item a:hover {
+                    color: #ff4757;
+                }
+                .footer {
+                    margin-top: 30px;
+                    font-size: 0.9em;
+                    color: #7f8c8d;
+                }
+            </style>
+            <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+        </head>
+        <body>
+            <h1>NPTEL API Server</h1>
+            <h2>Server is running</h2>
+            <ul class="route-list">
+                <li class="route-item"><a href="/courses">/courses</a> - List all courses</li>
+                <li class="route-item"><a href="/courses/:courseCode">/courses/:courseCode</a> - Fetch specific course details</li>
+                <li class="route-item"><a href="/view-questions">/view-questions</a> - View question counts per course</li>
+                <li class="route-item"><a href="/scrape">/scrape</a> - Scrape assignments (for local use)</li>
+            </ul>
+            <div class="footer">Made with ♥ by NPTEL API Team</div>
+        </body>
+        </html>
+    `);
 });
+
 
 app.get('/courses', async (req, res) => {
     try {
