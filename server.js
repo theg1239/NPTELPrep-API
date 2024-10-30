@@ -139,7 +139,7 @@ app.get('/', (req, res) => {
             <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
         </head>
         <body>
-            <h1>NPTEL API Server</h1>
+            <h1>Ishaan API Server</h1>
             <h2>Server is running</h2>
             <ul class="route-list">
                 <li class="route-item"><a href="/courses">/courses</a> - List all courses</li>
