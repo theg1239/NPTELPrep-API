@@ -1,8 +1,7 @@
-// server.js
-
 import express from 'express';
-import { Pool } from 'pg';
-import { logger } from './logger.js'; // Ensure logger.js is properly set up
+import pkg from 'pg';
+const { Pool } = pkg;
+import { logger } from './logger.js'; 
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -11,20 +10,17 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
-// Initialize PostgreSQL connection pool using connection string
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL, // Ensure DATABASE_URL is set in .env
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false, // Adjust SSL based on environment
+    connectionString: process.env.DATABASE_URL, 
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false, 
 });
 
-// Function to initialize database (create tables if they don't exist)
 const initializeDatabase = async () => {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         logger.info('Initializing database tables...');
 
-        // Create courses table
         await client.query(`
             CREATE TABLE IF NOT EXISTS courses (
                 id SERIAL PRIMARY KEY,
@@ -34,7 +30,6 @@ const initializeDatabase = async () => {
         `);
         logger.info('Ensured courses table exists.');
 
-        // Create assignments table
         await client.query(`
             CREATE TABLE IF NOT EXISTS assignments (
                 id SERIAL PRIMARY KEY,
@@ -47,7 +42,6 @@ const initializeDatabase = async () => {
         `);
         logger.info('Ensured assignments table exists.');
 
-        // Create questions table
         await client.query(`
             CREATE TABLE IF NOT EXISTS questions (
                 id SERIAL PRIMARY KEY,
@@ -60,7 +54,6 @@ const initializeDatabase = async () => {
         `);
         logger.info('Ensured questions table exists.');
 
-        // Create options table
         await client.query(`
             CREATE TABLE IF NOT EXISTS options (
                 id SERIAL PRIMARY KEY,
@@ -83,17 +76,13 @@ const initializeDatabase = async () => {
     }
 };
 
-// Call initializeDatabase on server start
 initializeDatabase();
 
-// Express Routes
 
-// Home endpoint
 app.get('/', (req, res) => {
     res.send('NPTEL API Server is running.');
 });
 
-// List all courses
 app.get('/courses', async (req, res) => {
     try {
         const query = `
@@ -111,7 +100,6 @@ app.get('/courses', async (req, res) => {
     }
 });
 
-// Get specific course details in the desired format
 app.get('/courses/:courseCode', async (req, res) => {
     const { courseCode } = req.params;
     try {
@@ -139,13 +127,11 @@ app.get('/courses/:courseCode', async (req, res) => {
             return;
         }
 
-        // Initialize the formatted data structure
         const formattedData = {
             title: rows[0].course_name,
             weeks: []
         };
 
-        // Map to keep track of weeks and questions
         const weekMap = {};
 
         rows.forEach(row => {
@@ -170,17 +156,14 @@ app.get('/courses/:courseCode', async (req, res) => {
                 };
             }
 
-            // Add option to the question
             weekMap[weekKey].questions[questionNumber].options.push(`Option ${row.option_number}: ${row.option_text}`);
 
-            // Add correct answer(s) by mapping option letters to option texts
             const correctOptions = row.correct_option.split(',').map(opt => opt.trim().toUpperCase());
             if (correctOptions.includes(row.option_number.toUpperCase())) {
                 weekMap[weekKey].questions[questionNumber].answer.push(`Option ${row.option_number}: ${row.option_text}`);
             }
         });
 
-        // Convert questions from object to array
         formattedData.weeks.forEach(week => {
             week.questions = Object.values(week.questions);
         });
@@ -192,7 +175,6 @@ app.get('/courses/:courseCode', async (req, res) => {
     }
 });
 
-// View Questions Summary
 app.get('/view-questions', async (req, res) => {
     try {
         const query = `
@@ -221,7 +203,6 @@ app.get('/view-questions', async (req, res) => {
     }
 });
 
-// Start the server
 app.listen(PORT, () => {
     logger.info(`API Server is running on port ${PORT}`);
 });
