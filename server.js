@@ -567,6 +567,9 @@ app.get('/dashboard', (req, res) => {
             <div class="footer">Made with ♥</div>
 
             <script>
+                let avgResponseTime = 15000; // Default to 15 seconds if no data
+                let etaSeconds = 0; // Initialize to 0
+
                 async function fetchCounts() {
                     try {
                         const response = await fetch('/counts');
@@ -592,14 +595,16 @@ app.get('/dashboard', (req, res) => {
                 }
 
                 function calculateAverageResponseTime(responseTimes) {
-                    if (responseTimes.length === 0) return 15000;
-                    const total = responseTimes.reduce((acc, curr) => acc + curr.response_time_ms, 0);
-                    return total / responseTimes.length;
+                    if (responseTimes.length === 0) return 15000; // Default to 15 seconds if no data
+                    const total = responseTimes.reduce((acc, curr) => acc + parseInt(curr.response_time_ms, 10), 0);
+                    const avg = total / responseTimes.length;
+                    return isFinite(avg) && avg > 0 ? avg : 15000;
                 }
 
-                async function updateDashboard() {
+                async function initializeDashboard() {
                     const counts = await fetchCounts();
                     const responseTimes = await fetchGeminiResponseTimes();
+
                     if (!counts) {
                         document.getElementById('eta').innerText = 'Unavailable';
                         document.getElementById('current-status').innerText = 'Unavailable';
@@ -622,18 +627,62 @@ app.get('/dashboard', (req, res) => {
                     progressBar.style.backgroundColor = progressPercentage < 50 ? '#1abc9c' :
                         progressPercentage < 80 ? '#f1c40f' : '#e74c3c';
 
-                    const avgResponseTime = calculateAverageResponseTime(responseTimes);
-                    const remainingCourses = total_courses_from_json - processed_courses;
-                    const etaMs = remainingCourses * avgResponseTime;
-
-                    document.getElementById('eta').innerText = isFinite(etaMs) && etaMs >= 0
-                        ? new Date(etaMs).toISOString().substr(11, 8)
-                        : 'Calculating...';
-
-                    const currentStatus = await getCurrentProcessingStatus();
-                    document.getElementById('current-status').innerText = currentStatus || 'None';
+                    avgResponseTime = calculateAverageResponseTime(responseTimes); // Calculate initial average response time
+                    updateETA(total_courses_from_json, processed_courses);
                 }
 
+                function updateETA(totalCourses, processedCourses) {
+                    const remainingCourses = totalCourses - processedCourses;
+                    const etaMs = remainingCourses * avgResponseTime;
+                    etaSeconds = Math.floor(etaMs / 1000);
+
+                    if (etaSeconds < 0 || !isFinite(etaSeconds)) {
+                        etaSeconds = 0;
+                    }
+
+                    // Reset the countdown timer display
+                    document.getElementById('eta').innerText = formatTime(etaSeconds);
+                }
+
+                function formatTime(seconds) {
+                    if (seconds <= 0) return 'Completed';
+                    const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
+                    const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+                    const secs = String(seconds % 60).padStart(2, '0');
+                    return \`\${hours}:\${minutes}:\${secs}\`;
+                }
+
+                // Start the countdown timer
+                setInterval(() => {
+                    if (etaSeconds > 0) {
+                        etaSeconds--;
+                        document.getElementById('eta').innerText = formatTime(etaSeconds);
+                    } else {
+                        document.getElementById('eta').innerText = 'Completed';
+                    }
+                }, 1000);
+
+                // Recalculate the average response time every 15 minutes
+                setInterval(async () => {
+                    const responseTimes = await fetchGeminiResponseTimes();
+                    const newAvg = calculateAverageResponseTime(responseTimes);
+                    if (newAvg !== avgResponseTime) {
+                        avgResponseTime = newAvg;
+                        const counts = await fetchCounts();
+                        if (counts) {
+                            const { total_courses_from_json, processed_courses } = counts;
+                            const remainingCourses = total_courses_from_json - processed_courses;
+                            const etaMs = remainingCourses * avgResponseTime;
+                            etaSeconds = Math.floor(etaMs / 1000);
+                            if (etaSeconds < 0 || !isFinite(etaSeconds)) {
+                                etaSeconds = 0;
+                            }
+                            document.getElementById('eta').innerText = formatTime(etaSeconds);
+                        }
+                    }
+                }, 15 * 60 * 1000); // 15 minutes in milliseconds
+
+                // Fetch and set the current processing status
                 async function getCurrentProcessingStatus() {
                     try {
                         const response = await fetch('/gemini-response-times');
@@ -648,14 +697,23 @@ app.get('/dashboard', (req, res) => {
                     }
                 }
 
+                async function updateCurrentStatus() {
+                    const currentStatus = await getCurrentProcessingStatus();
+                    document.getElementById('current-status').innerText = currentStatus || 'None';
+                }
+
+                async function updateDashboard() {
+                    await initializeDashboard();
+                    await updateCurrentStatus();
+                }
+
                 updateDashboard();
-                setInterval(updateDashboard, 5000);
+                setInterval(updateCurrentStatus, 5000); // Update current status every 5 seconds
             </script>
         </body>
         </html>
     `);
 });
-
 
 
 app.get('/total-courses', (req, res) => {
