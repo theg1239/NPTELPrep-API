@@ -1,3 +1,5 @@
+// server.js
+
 import express from 'express';
 import pkg from 'pg';
 const { Pool } = pkg;
@@ -135,7 +137,6 @@ try {
     logger.error(`Error reading courses.json: ${error.message}`);
     process.exit(1);
 }
-
 
 app.get('/', (req, res) => {
     res.send(`
@@ -316,24 +317,27 @@ app.get('/courses/:courseCode', async (req, res) => {
     }
 });
 
+// Optimized /counts endpoint using a single query
 app.get('/counts', async (req, res) => {
     try {
-        const assignmentsQuery = `SELECT COUNT(*) FROM assignments;`;
-        const questionsQuery = `SELECT COUNT(*) FROM questions;`;
-        const optionsQuery = `SELECT COUNT(*) FROM options;`;
-        const processedCoursesQuery = `SELECT COUNT(*) FROM courses;`;
+        const query = `
+            SELECT 
+                (SELECT COUNT(*) FROM courses) AS processed_courses,
+                (SELECT COUNT(*) FROM assignments) AS total_assignments,
+                (SELECT COUNT(*) FROM questions) AS total_questions,
+                (SELECT COUNT(*) FROM options) AS total_options;
+        `;
+        const { rows } = await pool.query(query);
+        if (rows.length === 0) {
+            throw new Error('No data returned from counts query.');
+        }
+        const counts = rows[0];
+        const processed_courses = parseInt(counts.processed_courses, 10);
+        const total_assignments = parseInt(counts.total_assignments, 10);
+        const total_questions = parseInt(counts.total_questions, 10);
+        const total_options = parseInt(counts.total_options, 10);
 
-        const [assignmentsResult, questionsResult, optionsResult, processedCoursesResult] = await Promise.all([
-            pool.query(assignmentsQuery),
-            pool.query(questionsQuery),
-            pool.query(optionsQuery),
-            pool.query(processedCoursesQuery)
-        ]);
-
-        const processed_courses = parseInt(processedCoursesResult.rows[0].count, 10);
-        const total_assignments = parseInt(assignmentsResult.rows[0].count, 10);
-        const total_questions = parseInt(questionsResult.rows[0].count, 10);
-        const total_options = parseInt(optionsResult.rows[0].count, 10);
+        logger.info(`Counts fetched - Processed Courses: ${processed_courses}, Total Assignments: ${total_assignments}, Total Questions: ${total_questions}, Total Options: ${total_options}`);
 
         res.json({
             total_courses_from_json: totalCoursesFromJSON,
@@ -400,6 +404,7 @@ app.get('/gemini-response-times', async (req, res) => {
     }
 });
 
+// Updated /dashboard route with optimized JavaScript
 app.get('/dashboard', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -570,6 +575,7 @@ app.get('/dashboard', (req, res) => {
                 let avgResponseTime = 15000; // Default to 15 seconds if no data
                 let etaSeconds = 0; // Initialize to 0
 
+                // Fetch counts and update the DOM
                 async function fetchCounts() {
                     try {
                         const response = await fetch('/counts');
@@ -582,6 +588,7 @@ app.get('/dashboard', (req, res) => {
                     }
                 }
 
+                // Fetch Gemini response times
                 async function fetchGeminiResponseTimes() {
                     try {
                         const response = await fetch('/gemini-response-times');
@@ -594,6 +601,7 @@ app.get('/dashboard', (req, res) => {
                     }
                 }
 
+                // Calculate average response time
                 function calculateAverageResponseTime(responseTimes) {
                     if (responseTimes.length === 0) return 15000; // Default to 15 seconds if no data
                     const total = responseTimes.reduce((acc, curr) => acc + parseInt(curr.response_time_ms, 10), 0);
@@ -601,16 +609,17 @@ app.get('/dashboard', (req, res) => {
                     return isFinite(avg) && avg > 0 ? avg : 15000;
                 }
 
-                async function initializeDashboard() {
-                    const counts = await fetchCounts();
-                    const responseTimes = await fetchGeminiResponseTimes();
+                // Format time as HH:MM:SS
+                function formatTime(seconds) {
+                    if (seconds <= 0) return 'Completed';
+                    const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
+                    const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+                    const secs = String(seconds % 60).padStart(2, '0');
+                    return \`\${hours}:\${minutes}:\${secs}\`;
+                }
 
-                    if (!counts) {
-                        document.getElementById('eta').innerText = 'Unavailable';
-                        document.getElementById('current-status').innerText = 'Unavailable';
-                        return;
-                    }
-
+                // Update counts in the DOM
+                function updateCountsUI(counts) {
                     const { total_courses_from_json, processed_courses, total_assignments, total_questions, total_options } = counts;
                     document.getElementById('total-courses').innerText = \`\${processed_courses} / \${total_courses_from_json}\`;
                     document.getElementById('total-assignments').innerText = total_assignments;
@@ -626,11 +635,9 @@ app.get('/dashboard', (req, res) => {
 
                     progressBar.style.backgroundColor = progressPercentage < 50 ? '#1abc9c' :
                         progressPercentage < 80 ? '#f1c40f' : '#e74c3c';
-
-                    avgResponseTime = calculateAverageResponseTime(responseTimes); // Calculate initial average response time
-                    updateETA(total_courses_from_json, processed_courses);
                 }
 
+                // Update ETA based on current counts and avgResponseTime
                 function updateETA(totalCourses, processedCourses) {
                     const remainingCourses = totalCourses - processedCourses;
                     const etaMs = remainingCourses * avgResponseTime;
@@ -644,12 +651,18 @@ app.get('/dashboard', (req, res) => {
                     document.getElementById('eta').innerText = formatTime(etaSeconds);
                 }
 
-                function formatTime(seconds) {
-                    if (seconds <= 0) return 'Completed';
-                    const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
-                    const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-                    const secs = String(seconds % 60).padStart(2, '0');
-                    return \`\${hours}:\${minutes}:\${secs}\`;
+                // Initialize counts and ETA on page load
+                async function initializeDashboard() {
+                    const counts = await fetchCounts();
+                    if (counts) {
+                        updateCountsUI(counts);
+                        const responseTimes = await fetchGeminiResponseTimes();
+                        avgResponseTime = calculateAverageResponseTime(responseTimes);
+                        updateETA(counts.total_courses_from_json, counts.processed_courses);
+                    } else {
+                        document.getElementById('eta').innerText = 'Unavailable';
+                        document.getElementById('current-status').innerText = 'Unavailable';
+                    }
                 }
 
                 // Start the countdown timer
@@ -670,14 +683,7 @@ app.get('/dashboard', (req, res) => {
                         avgResponseTime = newAvg;
                         const counts = await fetchCounts();
                         if (counts) {
-                            const { total_courses_from_json, processed_courses } = counts;
-                            const remainingCourses = total_courses_from_json - processed_courses;
-                            const etaMs = remainingCourses * avgResponseTime;
-                            etaSeconds = Math.floor(etaMs / 1000);
-                            if (etaSeconds < 0 || !isFinite(etaSeconds)) {
-                                etaSeconds = 0;
-                            }
-                            document.getElementById('eta').innerText = formatTime(etaSeconds);
+                            updateETA(counts.total_courses_from_json, counts.processed_courses);
                         }
                     }
                 }, 15 * 60 * 1000); // 15 minutes in milliseconds
@@ -697,24 +703,38 @@ app.get('/dashboard', (req, res) => {
                     }
                 }
 
+                // Update the current processing status in the DOM
                 async function updateCurrentStatus() {
                     const currentStatus = await getCurrentProcessingStatus();
                     document.getElementById('current-status').innerText = currentStatus || 'None';
                 }
 
-                async function updateDashboard() {
+                // Fetch and update counts every 5 seconds
+                async function updateCounts() {
+                    const counts = await fetchCounts();
+                    if (counts) {
+                        updateCountsUI(counts);
+                        updateETA(counts.total_courses_from_json, counts.processed_courses);
+                    }
+                }
+
+                // Initialize the dashboard on page load
+                async function initializeDashboardPage() {
                     await initializeDashboard();
                     await updateCurrentStatus();
                 }
 
-                updateDashboard();
+                // Initial dashboard setup
+                initializeDashboardPage();
+
+                // Set intervals for periodic updates
+                setInterval(updateCounts, 5000); // Update counts every 5 seconds
                 setInterval(updateCurrentStatus, 5000); // Update current status every 5 seconds
             </script>
         </body>
         </html>
     `);
 });
-
 
 app.get('/total-courses', (req, res) => {
     res.json({ total_courses: totalCoursesFromJSON });
