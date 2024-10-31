@@ -1,14 +1,25 @@
+// server.js or app.js
+
 import express from 'express';
 import pkg from 'pg';
 const { Pool } = pkg;
 import { logger } from './logger.js'; 
 import dotenv from 'dotenv';
+import cors from 'cors';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
 app.use(express.json());
+
+const corsOptions = {
+    origin: 'http://localhost:3001',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    credentials: true, 
+};
+
+app.use(cors(corsOptions));
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL, 
@@ -78,7 +89,7 @@ const initializeDatabase = async () => {
 
 initializeDatabase();
 
-
+// Root Route
 app.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -144,7 +155,6 @@ app.get('/', (req, res) => {
             <ul class="route-list">
                 <li class="route-item"><a href="/courses">/courses</a> - List all courses</li>
                 <li class="route-item"><a href="/courses/:courseCode">/courses/:courseCode</a> - Fetch specific course details</li>
-                <li class="route-item"><a href="/view-questions">/view-questions</a> - View question counts per course</li>
             </ul>
             <div class="footer">Made with ♥</div>
         </body>
@@ -152,17 +162,30 @@ app.get('/', (req, res) => {
     `);
 });
 
-
+// Enhanced /courses Endpoint
 app.get('/courses', async (req, res) => {
     try {
         const query = `
-            SELECT course_code, course_name
-            FROM courses
-            ORDER BY course_code;
+            SELECT 
+                c.course_code, 
+                c.course_name, 
+                COUNT(q.id) AS question_count,
+                ARRAY_AGG(DISTINCT a.week_number) AS weeks
+            FROM courses c
+            LEFT JOIN assignments a ON c.id = a.course_id
+            LEFT JOIN questions q ON a.id = q.assignment_id
+            GROUP BY c.course_code, c.course_name
+            ORDER BY c.course_code;
         `;
         const { rows } = await pool.query(query);
+        const formattedCourses = rows.map(row => ({
+            course_code: row.course_code,
+            course_name: row.course_name,
+            question_count: parseInt(row.question_count, 10),
+            weeks: row.weeks ? row.weeks.sort((a, b) => a - b) : []
+        }));
         res.json({
-            courses: rows
+            courses: formattedCourses
         });
     } catch (error) {
         logger.error(`Error fetching all courses: ${error.message}`);
@@ -170,6 +193,7 @@ app.get('/courses', async (req, res) => {
     }
 });
 
+// Detailed Course Endpoint
 app.get('/courses/:courseCode', async (req, res) => {
     const { courseCode } = req.params;
     try {
@@ -245,34 +269,10 @@ app.get('/courses/:courseCode', async (req, res) => {
     }
 });
 
-app.get('/view-questions', async (req, res) => {
-    try {
-        const query = `
-            SELECT 
-                c.course_code, 
-                c.course_name, 
-                COUNT(q.id) as question_count
-            FROM courses c
-            LEFT JOIN assignments a ON c.id = a.course_id
-            LEFT JOIN questions q ON a.id = q.assignment_id
-            GROUP BY c.course_code, c.course_name
-            ORDER BY c.course_code;
-        `;
-        const { rows } = await pool.query(query);
-        const coursesWithQuestions = rows.map(row => ({
-            course_code: row.course_code,
-            course_name: row.course_name,
-            question_count: parseInt(row.question_count, 10)
-        }));
-        res.json({
-            courses: coursesWithQuestions
-        });
-    } catch (error) {
-        logger.error(`Error fetching questions per course: ${error.message}`);
-        res.status(500).json({ message: 'An error occurred while fetching questions per course.' });
-    }
-});
+// Removed /view-questions Endpoint
+// If you have other related endpoints or functionalities relying on /view-questions, ensure to update them accordingly.
 
+// Start Server
 app.listen(PORT, () => {
     logger.info(`API Server is running on port ${PORT}`);
 });
