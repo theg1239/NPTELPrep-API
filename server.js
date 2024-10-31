@@ -461,42 +461,39 @@ app.get('/dashboard', (req, res) => {
                     font-size: 1em;
                     font-weight: bold;
                 }
-.progress-container {
-    width: 100%;
-    max-width: 800px;
-    background-color: #2c2c2c;
-    border-radius: 20px;
-    overflow: hidden;
-    margin-bottom: 20px;
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-    height: 45px;
-    position: relative;
-}
-
-.progress-bar {
-    height: 100%;
-    width: 0%;
-    background-color: #1abc9c;
-    transition: width 1s ease-in-out, background-color 0.5s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #ffffff;
-    font-weight: bold;
-    font-size: 1em;
-}
-
-@media (max-width: 768px) {
-    .progress-container {
-        width: 90%;
-        max-width: 100%; /* Adjusts to fill the mobile screen width */
-        height: 35px; /* Slightly smaller height for mobile */
-    }
-    .progress-bar {
-        font-size: 0.9em; /* Adjust font size for smaller screens */
-    }
-}
-
+                .progress-container {
+                    width: 100%;
+                    max-width: 800px;
+                    background-color: #2c2c2c;
+                    border-radius: 20px;
+                    overflow: hidden;
+                    margin-bottom: 20px;
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+                    height: 45px;
+                    position: relative;
+                }
+                .progress-bar {
+                    height: 100%;
+                    width: 0%;
+                    background-color: #1abc9c;
+                    transition: width 1s ease-in-out, background-color 0.5s;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: #ffffff;
+                    font-weight: bold;
+                    font-size: 1em;
+                }
+                @media (max-width: 768px) {
+                    .progress-container {
+                        width: 90%;
+                        max-width: 100%; 
+                        height: 35px;
+                    }
+                    .progress-bar {
+                        font-size: 0.9em; 
+                    }
+                }
                 .eta, .current-status {
                     font-size: 1em;
                     text-align: center;
