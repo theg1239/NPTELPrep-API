@@ -1,5 +1,3 @@
-// server.js or app.js
-
 import express from 'express';
 import pkg from 'pg';
 const { Pool } = pkg;
@@ -13,10 +11,23 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 app.use(express.json());
 
+const allowedOrigins = [
+    'http://localhost:3001', 
+    'https://examcooker.acmvit.in',
+    'http://localhost:3000',
+    'http://localhost:4000'
+];
+
 const corsOptions = {
-    origin: 'http://localhost:3001',
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    credentials: true, 
+    credentials: true,
 };
 
 app.use(cors(corsOptions));
@@ -89,7 +100,6 @@ const initializeDatabase = async () => {
 
 initializeDatabase();
 
-// Root Route
 app.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -162,7 +172,6 @@ app.get('/', (req, res) => {
     `);
 });
 
-// Enhanced /courses Endpoint
 app.get('/courses', async (req, res) => {
     try {
         const query = `
@@ -193,7 +202,6 @@ app.get('/courses', async (req, res) => {
     }
 });
 
-// Detailed Course Endpoint
 app.get('/courses/:courseCode', async (req, res) => {
     const { courseCode } = req.params;
     try {
@@ -269,10 +277,6 @@ app.get('/courses/:courseCode', async (req, res) => {
     }
 });
 
-// Removed /view-questions Endpoint
-// If you have other related endpoints or functionalities relying on /view-questions, ensure to update them accordingly.
-
-// Start Server
 app.listen(PORT, () => {
     logger.info(`API Server is running on port ${PORT}`);
 });
