@@ -1,12 +1,13 @@
 import express from 'express';
 import pkg from 'pg';
-const { Pool } = pkg;
+const { Pool, Client } = pkg;
 import { logger } from './logger.js';
 import dotenv from 'dotenv';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import redisClient from './redisClient.js'; 
 
 dotenv.config();
 
@@ -40,8 +41,6 @@ const pool = new Pool({
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
-app.use(express.static('public'));
-
 const initializeDatabase = async () => {
     const client = await pool.connect();
     try {
@@ -50,7 +49,8 @@ const initializeDatabase = async () => {
             CREATE TABLE IF NOT EXISTS courses (
                 id SERIAL PRIMARY KEY,
                 course_code VARCHAR(50) UNIQUE NOT NULL,
-                course_name VARCHAR(255) NOT NULL
+                course_name VARCHAR(255) NOT NULL,
+                request_count INTEGER DEFAULT 0
             );
         `);
         await client.query(`
@@ -113,6 +113,28 @@ const initializeDatabase = async () => {
                 reported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
+
+        /*
+        await client.query(`
+            CREATE OR REPLACE FUNCTION notify_cache_invalidation()
+            RETURNS trigger AS $$
+            BEGIN
+                PERFORM pg_notify('cache_invalidation', 'courses_all');
+                PERFORM pg_notify('cache_invalidation', 'course_' || NEW.course_code);
+                RETURN NULL;
+            END;
+            $$ LANGUAGE plpgsql;
+        `);
+
+        await client.query(`
+            DROP TRIGGER IF EXISTS courses_update_trigger ON courses;
+            CREATE TRIGGER courses_update_trigger
+            AFTER INSERT OR UPDATE OR DELETE ON courses
+            FOR EACH ROW
+            EXECUTE FUNCTION notify_cache_invalidation();
+        `);
+        */
+
         await client.query('COMMIT');
         logger.info('Database tables initialized successfully.');
     } catch (error) {
@@ -124,26 +146,28 @@ const initializeDatabase = async () => {
     }
 };
 
-initializeDatabase();
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const coursesFilePath = path.join(__dirname, 'public', 'courses.json');
 let totalCoursesFromJSON = 0;
 
-try {
-    const coursesContent = fs.readFileSync(coursesFilePath, 'utf-8');
-    const coursesData = JSON.parse(coursesContent);
-    if (coursesData.data && Array.isArray(coursesData.data)) {
-        totalCoursesFromJSON = coursesData.data.length;
-        logger.info(`Total courses from courses.json: ${totalCoursesFromJSON}`);
-    } else {
-        throw new Error("Invalid structure in courses.json. Expected a 'data' array.");
+const loadCoursesJSON = async () => {
+    try {
+        const coursesContent = await fs.promises.readFile(coursesFilePath, 'utf-8');
+        const coursesData = JSON.parse(coursesContent);
+        if (coursesData.data && Array.isArray(coursesData.data)) {
+            totalCoursesFromJSON = coursesData.data.length;
+            logger.info(`Total courses from courses.json: ${totalCoursesFromJSON}`);
+        } else {
+            throw new Error("Invalid structure in courses.json. Expected a 'data' array.");
+        }
+    } catch (error) {
+        logger.error(`Error reading courses.json: ${error.message}`);
+        process.exit(1);
     }
-} catch (error) {
-    logger.error(`Error reading courses.json: ${error.message}`);
-    process.exit(1);
-}
+};
+
+loadCoursesJSON();
 
 app.get('/', (req, res) => {
     res.send(`
@@ -222,6 +246,14 @@ app.get('/', (req, res) => {
 
 app.get('/courses', async (req, res) => {
     try {
+        const cacheKey = 'courses_all';
+        const cachedCourses = await redisClient.get(cacheKey);
+
+        if (cachedCourses) {
+            logger.info('Serving /courses from Redis cache.');
+            return res.json(JSON.parse(cachedCourses));
+        }
+
         const query = `
             SELECT 
                 c.course_code, 
@@ -243,6 +275,10 @@ app.get('/courses', async (req, res) => {
             weeks: row.weeks ? row.weeks.sort((a, b) => a - b) : [],
             request_count: parseInt(row.request_count, 10), 
         }));
+
+        await redisClient.setEx(cacheKey, 300, JSON.stringify({ courses: formattedCourses }));
+        logger.info('Caching /courses data in Redis.');
+
         res.json({
             courses: formattedCourses
         });
@@ -254,102 +290,106 @@ app.get('/courses', async (req, res) => {
 
 app.get('/courses/:courseCode', async (req, res) => {
     const { courseCode } = req.params;
-    const client = await pool.connect();
+    const cacheKey = `course_${courseCode}`;
+
     try {
-        await client.query('BEGIN');
+        const cachedCourse = await redisClient.get(cacheKey);
 
-        const incrementQuery = `
-            UPDATE courses
-            SET request_count = request_count + 1
-            WHERE course_code = $1
-            RETURNING request_count;
-        `;
-        const incrementResult = await client.query(incrementQuery, [courseCode]);
-
-        if (incrementResult.rowCount === 0) {
-            await client.query('ROLLBACK');
-            res.status(404).json({ message: 'Course not found.' });
-            return;
+        if (cachedCourse) {
+            logger.info(`Serving /courses/${courseCode} from Redis cache.`);
+            return res.json(JSON.parse(cachedCourse));
         }
 
-        const newRequestCount = incrementResult.rows[0].request_count;
+        const client = await pool.connect();
+        try {
+            const query = `
+                WITH updated_course AS (
+                    UPDATE courses
+                    SET request_count = request_count + 1
+                    WHERE course_code = $1
+                    RETURNING id, course_name, request_count
+                )
+                SELECT 
+                    a.week_number, 
+                    q.question_number, 
+                    q.question_text, 
+                    q.correct_option, 
+                    o.option_number, 
+                    o.option_text
+                FROM updated_course c
+                JOIN assignments a ON c.id = a.course_id
+                JOIN questions q ON a.id = q.assignment_id
+                JOIN options o ON q.id = o.question_id
+                WHERE c.course_code = $1
+                ORDER BY a.week_number, q.question_number, o.option_number;
+            `;
+            const { rows } = await client.query(query, [courseCode]);
 
-        const courseQuery = `
-            SELECT 
-                c.course_code, 
-                c.course_name,
-                c.request_count, -- Include request_count
-                a.week_number, 
-                q.question_number, 
-                q.question_text, 
-                q.correct_option, 
-                o.option_number, 
-                o.option_text
-            FROM courses c
-            JOIN assignments a ON c.id = a.course_id
-            JOIN questions q ON a.id = q.assignment_id
-            JOIN options o ON q.id = o.question_id
-            WHERE c.course_code = $1
-            ORDER BY a.week_number, q.question_number, o.option_number;
-        `;
-        const { rows } = await client.query(courseQuery, [courseCode]);
+            if (rows.length === 0) {
+                return res.status(404).json({ message: 'Course not found or no data available.' });
+            }
 
-        if (rows.length === 0) {
-            await client.query('ROLLBACK');
-            res.status(404).json({ message: 'Course not found or no data available.' });
-            return;
+            const { course_name, request_count } = rows[0]; 
+
+            const formattedData = {
+                title: course_name,
+                request_count: request_count,
+                weeks: []
+            };
+
+            const weekMap = {};
+
+            rows.forEach(row => {
+                const weekNumber = row.week_number;
+                const weekKey = `Week ${weekNumber}`;
+
+                if (!weekMap[weekKey]) {
+                    weekMap[weekKey] = {
+                        name: `${weekNumber}`,
+                        questions: {}
+                    };
+                    formattedData.weeks.push(weekMap[weekKey]);
+                }
+
+                const questionNumber = row.question_number;
+
+                if (!weekMap[weekKey].questions[questionNumber]) {
+                    weekMap[weekKey].questions[questionNumber] = {
+                        question: row.question_text,
+                        options: [],
+                        answer: []
+                    };
+                }
+
+                weekMap[weekKey].questions[questionNumber].options.push(`Option ${row.option_number}: ${row.option_text}`);
+
+                const correctOptions = row.correct_option.split(',').map(opt => opt.trim().toUpperCase());
+                if (correctOptions.includes(row.option_number.toUpperCase())) {
+                    weekMap[weekKey].questions[questionNumber].answer.push(`Option ${row.option_number}: ${row.option_text}`);
+                }
+            });
+
+            formattedData.weeks.forEach(week => {
+                week.questions = Object.values(week.questions);
+            });
+
+            // Conditionally cache if request_count > 20
+            if (request_count > 20) {
+                // Cache for 10 minutes (600 seconds)
+                await redisClient.setEx(cacheKey, 600, JSON.stringify(formattedData));
+                logger.info(`Caching /courses/${courseCode} data in Redis.`);
+            }
+
+            res.json(formattedData);
+        } catch (error) {
+            logger.error(`Error fetching course data for ${courseCode}: ${error.message}`);
+            res.status(500).json({ message: 'An error occurred while fetching course data.' });
+        } finally {
+            client.release();
         }
-
-        const formattedData = {
-            title: rows[0].course_name,
-            request_count: newRequestCount,
-            weeks: []
-        };
-
-        const weekMap = {};
-
-        rows.forEach(row => {
-            const weekNumber = row.week_number;
-            const weekKey = `Week ${weekNumber}`;
-
-            if (!weekMap[weekKey]) {
-                weekMap[weekKey] = {
-                    name: `${weekNumber}`,
-                    questions: {}
-                };
-                formattedData.weeks.push(weekMap[weekKey]);
-            }
-
-            const questionNumber = row.question_number;
-
-            if (!weekMap[weekKey].questions[questionNumber]) {
-                weekMap[weekKey].questions[questionNumber] = {
-                    question: row.question_text,
-                    options: [],
-                    answer: []
-                };
-            }
-
-            weekMap[weekKey].questions[questionNumber].options.push(`Option ${row.option_number}: ${row.option_text}`);
-
-            const correctOptions = row.correct_option.split(',').map(opt => opt.trim().toUpperCase());
-            if (correctOptions.includes(row.option_number.toUpperCase())) {
-                weekMap[weekKey].questions[questionNumber].answer.push(`Option ${row.option_number}: ${row.option_text}`);
-            }
-        });
-
-        formattedData.weeks.forEach(week => {
-            week.questions = Object.values(week.questions);
-        });
-
-        await client.query('COMMIT');
-        res.json(formattedData);
     } catch (error) {
-        await client.query('ROLLBACK');
-        logger.error(`Error fetching course data for ${courseCode}: ${error.message}`);
-        res.status(500).json({ message: 'An error occurred while fetching course data.' });
-    } finally {
-        client.release();
+        logger.error(`Error in /courses/:courseCode: ${error.message}`);
+        res.status(500).json({ message: 'An internal server error occurred.' });
     }
 });
 
@@ -466,7 +506,6 @@ app.post('/report-question', verifyVITEmail, async (req, res) => {
 
     const client = await pool.connect();
     try {
-        // Check if the question has already been reported by this user
         const existingReportQuery = `
             SELECT id FROM reported_questions 
             WHERE question_text = $1 AND reported_by = $2;
@@ -477,7 +516,6 @@ app.post('/report-question', verifyVITEmail, async (req, res) => {
             return res.status(409).json({ message: 'You have already reported this question.' });
         }
 
-        // Proceed with inserting a new report if no previous report exists
         const insertQuery = `
             INSERT INTO reported_questions (question_text, reason, reported_by)
             VALUES ($1, $2, $3)
