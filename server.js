@@ -438,39 +438,48 @@ app.get('/gemini-response-times', async (req, res) => {
     }
 });
 
-app.post('/report-question', async (req, res) => {
-    const { question_id, reason, reported_by } = req.body;
+const verifyVITEmail = (req, res, next) => {
+    const authHeader = req.headers.authorization;
 
-    if (question_id === undefined || reason === undefined || reported_by === undefined) {
-        return res.status(400).json({ message: 'Missing required fields: question_id, reason, and reported_by.' });
+    if (!authHeader) {
+        return res.status(401).json({ message: 'Authorization header is missing' });
     }
 
-    if (!Number.isInteger(question_id) || question_id <= 0) {
-        return res.status(400).json({ message: 'Invalid question_id. It must be a positive integer.' });
+    const email = authHeader;
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email) || !email.endsWith('@vitstudent.ac.in')) {
+        return res.status(403).json({ message: 'Forbidden: Invalid email domain' });
+    }
+
+    req.userEmail = email;
+    next();
+};
+
+app.post('/report-question', verifyVITEmail, async (req, res) => {
+    const { question_text, reason } = req.body;
+    const reported_by = req.userEmail; 
+
+    if (question_text === undefined || reason === undefined) {
+        return res.status(400).json({ message: 'Missing required fields: question_text and reason.' });
+    }
+
+    if (typeof question_text !== 'string' || question_text.trim() === '') {
+        return res.status(400).json({ message: 'Invalid question_text. It must be a non-empty string.' });
     }
 
     if (typeof reason !== 'string' || reason.trim() === '') {
         return res.status(400).json({ message: 'Invalid reason. It must be a non-empty string.' });
     }
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (typeof reported_by !== 'string' || !emailRegex.test(reported_by.trim())) {
-        return res.status(400).json({ message: 'Invalid reported_by. It must be a valid email address.' });
-    }
-
     const client = await pool.connect();
     try {
-        const questionCheck = await client.query('SELECT id FROM questions WHERE id = $1', [question_id]);
-        if (questionCheck.rowCount === 0) {
-            return res.status(404).json({ message: 'Question not found.' });
-        }
-
         const insertQuery = `
-            INSERT INTO reported_questions (question_id, reason, reported_by)
+            INSERT INTO reported_questions (question_text, reason, reported_by)
             VALUES ($1, $2, $3)
-            RETURNING id, question_id, reason, reported_by, reported_at;
+            RETURNING id, question_text, reason, reported_by, reported_at;
         `;
-        const insertResult = await client.query(insertQuery, [question_id, reason.trim(), reported_by.trim()]);
+        const insertResult = await client.query(insertQuery, [question_text.trim(), reason.trim(), reported_by]);
 
         const report = insertResult.rows[0];
         res.status(201).json({ 
