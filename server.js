@@ -235,7 +235,6 @@ app.get('/', (req, res) => {
                 <li class="route-item"><a href="/courses">/courses</a> - List all courses</li>
                 <li class="route-item"><a href="/courses/:courseCode">/courses/:courseCode</a> - Fetch specific course details</li>
                 <li class="route-item"><a href="/counts">/counts</a> - Get counts of courses, assignments, questions, options</li>
-                <li class="route-item"><a href="/dashboard">/dashboard</a> - View Dashboard</li>
             </ul>
             <div class="footer">Made with ♥ for public usage</div>
         </body>
@@ -292,7 +291,6 @@ app.get('/courses/:courseCode', async (req, res) => {
     const cacheKey = `course_${courseCode}`;
 
     try {
-        // Check if the course data is cached in Redis
         const cachedCourse = await redisClient.get(cacheKey);
         if (cachedCourse) {
             logger.info(`Serving /courses/${courseCode} from Redis cache.`);
@@ -301,7 +299,6 @@ app.get('/courses/:courseCode', async (req, res) => {
 
         const client = await pool.connect();
         try {
-            // Fetch course details and update request count
             const query = `
                 WITH updated_course AS (
                     UPDATE courses
@@ -332,7 +329,6 @@ app.get('/courses/:courseCode', async (req, res) => {
 
             const { course_name, request_count } = rows[0];
 
-            // Organize data into structured JSON
             const formattedData = {
                 title: course_name,
                 request_count: request_count,
@@ -498,7 +494,7 @@ const verifyVITEmail = (req, res, next) => {
 
 app.post('/report-question', verifyVITEmail, async (req, res) => {
     const { question_text, reason } = req.body;
-    const reported_by = req.userEmail; // email from middleware verification
+    const reported_by = req.userEmail; n
 
     if (!question_text || !reason) {
         return res.status(400).json({ message: 'Missing required fields: question_text and reason.' });
@@ -536,7 +532,7 @@ app.post('/report-question', verifyVITEmail, async (req, res) => {
 });
 
 
-app.get('/dashboard', (req, res) => {
+/* app.get('/dashboard', (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html lang="en">
@@ -850,12 +846,13 @@ app.get('/dashboard', (req, res) => {
         </html>
     `);
 });
+*/
 
 app.get('/total-courses', (req, res) => {
     res.json({ total_courses: totalCoursesFromJSON });
 });
 
-app.post('/report-question', async (req, res) => {
+/* app.post('/report-question', async (req, res) => {
     const { question_id, reason, reported_by } = req.body;
 
     if (question_id === undefined || reason === undefined || reported_by === undefined) {
@@ -901,8 +898,9 @@ app.post('/report-question', async (req, res) => {
         client.release();
     }
 });
+*/
 
-app.get('/dashboard', (req, res) => {
+/* app.get('/dashboard', (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html lang="en">
@@ -1232,6 +1230,7 @@ app.get('/dashboard', (req, res) => {
         </html>
     `);
 });
+*/
 
 app.listen(PORT, () => {
     logger.info(`API Server is running on port ${PORT}`);
