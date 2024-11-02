@@ -1,5 +1,3 @@
-// server.js
-
 import express from 'express';
 import pkg from 'pg';
 const { Pool } = pkg;
@@ -21,7 +19,6 @@ const allowedOrigins = [
     'https://examcooker.acmvit.in',
     'http://localhost:3000',
     'http://localhost:4000',
-    'https://k41d0nsf-3000.inc1.devtunnels.ms'
 ];
 
 const corsOptions = {
@@ -105,6 +102,15 @@ const initializeDatabase = async () => {
                 assignment_title VARCHAR(255),
                 response_time_ms INTEGER,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS reported_questions (
+                id SERIAL PRIMARY KEY,
+                question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
+                reason TEXT NOT NULL,
+                reported_by VARCHAR(255) NOT NULL,
+                reported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
         await client.query('COMMIT');
@@ -206,6 +212,7 @@ app.get('/', (req, res) => {
                 <li class="route-item"><a href="/courses/:courseCode">/courses/:courseCode</a> - Fetch specific course details</li>
                 <li class="route-item"><a href="/counts">/counts</a> - Get counts of courses, assignments, questions, options</li>
                 <li class="route-item"><a href="/dashboard">/dashboard</a> - View Dashboard</li>
+                <li class="route-item"><a href="/report-question">/report-question</a> - Report a question (POST)</li>
             </ul>
             <div class="footer">Made with ♥ for public usage</div>
         </body>
@@ -380,7 +387,6 @@ app.get('/counts', async (req, res) => {
     }
 });
 
-// Get Scraping Progress
 app.get('/scraping-progress', async (req, res) => {
     try {
         const query = `
@@ -432,7 +438,419 @@ app.get('/gemini-response-times', async (req, res) => {
     }
 });
 
-// Updated /dashboard route with optimized JavaScript
+app.post('/report-question', async (req, res) => {
+    const { question_id, reason, reported_by } = req.body;
+
+    if (question_id === undefined || reason === undefined || reported_by === undefined) {
+        return res.status(400).json({ message: 'Missing required fields: question_id, reason, and reported_by.' });
+    }
+
+    if (!Number.isInteger(question_id) || question_id <= 0) {
+        return res.status(400).json({ message: 'Invalid question_id. It must be a positive integer.' });
+    }
+
+    if (typeof reason !== 'string' || reason.trim() === '') {
+        return res.status(400).json({ message: 'Invalid reason. It must be a non-empty string.' });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (typeof reported_by !== 'string' || !emailRegex.test(reported_by.trim())) {
+        return res.status(400).json({ message: 'Invalid reported_by. It must be a valid email address.' });
+    }
+
+    const client = await pool.connect();
+    try {
+        const questionCheck = await client.query('SELECT id FROM questions WHERE id = $1', [question_id]);
+        if (questionCheck.rowCount === 0) {
+            return res.status(404).json({ message: 'Question not found.' });
+        }
+
+        const insertQuery = `
+            INSERT INTO reported_questions (question_id, reason, reported_by)
+            VALUES ($1, $2, $3)
+            RETURNING id, question_id, reason, reported_by, reported_at;
+        `;
+        const insertResult = await client.query(insertQuery, [question_id, reason.trim(), reported_by.trim()]);
+
+        const report = insertResult.rows[0];
+        res.status(201).json({ 
+            message: 'Report submitted successfully.', 
+            report 
+        });
+    } catch (error) {
+        logger.error(`Error reporting question: ${error.message}`);
+        res.status(500).json({ message: 'An error occurred while submitting the report.' });
+    } finally {
+        client.release();
+    }
+});
+
+app.get('/dashboard', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Dashboard</title>
+            <style>
+                html, body {
+                    height: 100%;
+                    margin: 0;
+                    overflow-y: hidden; 
+                }
+                body {
+                    background-color: #121212;
+                    color: #ffffff;
+                    font-family: 'Courier New', Courier, monospace;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    padding: 20px;
+                    min-height: 100vh;
+                    box-sizing: border-box;
+                }
+                h1 {
+                    font-family: 'Press Start 2P', sans-serif;
+                    font-size: 2em;
+                    color: #ff4757;
+                    margin: 30px 0;
+                    text-align: center;
+                }
+                .stats {
+                    display: flex;
+                    flex-wrap: wrap;
+                    justify-content: center;
+                    gap: 15px;
+                    margin-bottom: 20px;
+                    width: 100%;
+                    max-width: 900px; 
+                }
+                .stat {
+                    background-color: #1e1e1e;
+                    padding: 10px 12px;
+                    border-radius: 8px;
+                    text-align: center;
+                    flex: 1 1 150px;
+                    max-width: 180px;
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+                    min-height: 90px;
+                }
+                .stat h2 {
+                    margin: 8px 0;
+                    font-size: 1em;
+                    color: #f9ca24;
+                }
+                .stat p {
+                    margin: 0;
+                    font-size: 1em;
+                    font-weight: bold;
+                }
+                .progress-container {
+                    width: 100%;
+                    max-width: 800px;
+                    background-color: #2c2c2c;
+                    border-radius: 20px;
+                    overflow: hidden;
+                    margin-bottom: 20px;
+                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+                    height: 45px;
+                    position: relative;
+                }
+                .progress-bar {
+                    height: 100%;
+                    width: 0%;
+                    background-color: #1abc9c;
+                    transition: width 1s ease-in-out, background-color 0.5s;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    color: #ffffff;
+                    font-weight: bold;
+                    font-size: 1em;
+                }
+                @media (max-width: 768px) {
+                    .progress-container {
+                        width: 90%;
+                        max-width: 100%; 
+                        height: 35px;
+                    }
+                    .progress-bar {
+                        font-size: 0.9em; 
+                    }
+                }
+                .eta, .current-status {
+                    font-size: 1em;
+                    text-align: center;
+                    margin: 10px 0;
+                }
+                .footer {
+                    font-size: 0.8em;
+                    color: #7f8c8d;
+                    margin: 20px 0;
+                }
+
+                @media (max-width: 768px) {
+                    body {
+                        padding-top: 10px;
+                        overflow-y: auto;
+                    }
+                    h1 {
+                        font-size: 1.8em;
+                        margin: 15px 0;
+                    }
+                    .stats {
+                        flex-direction: column;
+                        align-items: center;
+                    }
+                    .stat {
+                        width: 90%; 
+                        max-width: 250px;
+                        padding: 8px;
+                        min-height: 80px;
+                    }
+                    .stat h2, .stat p {
+                        font-size: 0.9em;
+                    }
+                    .progress-container {
+                        width: 100%;
+                        height: 40px;
+                    }
+                }
+            </style>
+            <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+        </head>
+        <body>
+            <h1>Dashboard</h1>
+            <div class="stats">
+                <div class="stat">
+                    <h2>Total Courses</h2>
+                    <p id="total-courses">0 / 0</p>
+                </div>
+                <div class="stat">
+                    <h2>Total Assignments</h2>
+                    <p id="total-assignments">0</p>
+                </div>
+                <div class="stat">
+                    <h2>Total Questions</h2>
+                    <p id="total-questions">0</p>
+                </div>
+                <div class="stat">
+                    <h2>Total Options</h2>
+                    <p id="total-options">0</p>
+                </div>
+            </div>
+            <div class="progress-container">
+                <div class="progress-bar" id="progress-bar">0%</div>
+            </div>
+            <div class="eta">
+                <strong>Estimated Time Remaining:</strong> <span id="eta">Calculating...</span>
+            </div>
+            <div class="current-status">
+                <strong>Currently Processing:</strong> <span id="current-status">None</span>
+            </div>
+            <div class="footer">Made with ♥</div>
+
+            <script>
+                let avgResponseTime = 15000; 
+                let etaSeconds = 0; // Initialize to 0
+
+                async function fetchCounts() {
+                    try {
+                        const response = await fetch('/counts');
+                        if (!response.ok) throw new Error('Network response was not ok');
+                        const data = await response.json();
+                        return data;
+                    } catch (error) {
+                        console.error('Error fetching counts:', error);
+                        return null;
+                    }
+                }
+
+                async function fetchGeminiResponseTimes() {
+                    try {
+                        const response = await fetch('/gemini-response-times');
+                        if (!response.ok) throw new Error('Network response was not ok');
+                        const data = await response.json();
+                        return data.response_times;
+                    } catch (error) {
+                        console.error('Error fetching Gemini response times:', error);
+                        return [];
+                    }
+                }
+
+                function calculateAverageResponseTime(responseTimes) {
+                    if (responseTimes.length === 0) return 15000; 
+                    const total = responseTimes.reduce((acc, curr) => acc + parseInt(curr.response_time_ms, 10), 0);
+                    const avg = total / responseTimes.length;
+                    return isFinite(avg) && avg > 0 ? avg : 15000;
+                }
+
+                function formatTime(seconds) {
+                    if (seconds <= 0) return 'Completed';
+                    const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
+                    const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
+                    const secs = String(seconds % 60).padStart(2, '0');
+                    return \`\${hours}:\${minutes}:\${secs}\`;
+                }
+
+                function updateCountsUI(counts) {
+                    const { total_courses_from_json, processed_courses, total_assignments, total_questions, total_options } = counts;
+                    document.getElementById('total-courses').innerText = \`\${processed_courses} / \${total_courses_from_json}\`;
+                    document.getElementById('total-assignments').innerText = total_assignments;
+                    document.getElementById('total-questions').innerText = total_questions;
+                    document.getElementById('total-options').innerText = total_options;
+
+                    const progressPercentage = total_courses_from_json > 0 
+                        ? Math.min((processed_courses / total_courses_from_json) * 100, 100).toFixed(2)
+                        : 0;
+                    const progressBar = document.getElementById('progress-bar');
+                    progressBar.style.width = progressPercentage + '%';
+                    progressBar.innerText = progressPercentage + '%';
+
+                    progressBar.style.backgroundColor = progressPercentage < 50 ? '#1abc9c' :
+                        progressPercentage < 80 ? '#f1c40f' : '#e74c3c';
+                }
+
+                function updateETA(totalCourses, processedCourses) {
+                    const remainingCourses = totalCourses - processedCourses;
+                    const etaMs = remainingCourses * avgResponseTime;
+                    etaSeconds = Math.floor(etaMs / 1000);
+
+                    if (etaSeconds < 0 || !isFinite(etaSeconds)) {
+                        etaSeconds = 0;
+                    }
+
+                    document.getElementById('eta').innerText = formatTime(etaSeconds);
+                }
+
+                async function initializeDashboard() {
+                    const counts = await fetchCounts();
+                    if (counts) {
+                        updateCountsUI(counts);
+                        const responseTimes = await fetchGeminiResponseTimes();
+                        avgResponseTime = calculateAverageResponseTime(responseTimes);
+                        updateETA(counts.total_courses_from_json, counts.processed_courses);
+                    } else {
+                        document.getElementById('eta').innerText = 'Unavailable';
+                        document.getElementById('current-status').innerText = 'Unavailable';
+                    }
+                }
+
+                setInterval(() => {
+                    if (etaSeconds > 0) {
+                        etaSeconds--;
+                        document.getElementById('eta').innerText = formatTime(etaSeconds);
+                    } else {
+                        document.getElementById('eta').innerText = 'Completed';
+                    }
+                }, 1000);
+
+                setInterval(async () => {
+                    const responseTimes = await fetchGeminiResponseTimes();
+                    const newAvg = calculateAverageResponseTime(responseTimes);
+                    if (newAvg !== avgResponseTime) {
+                        avgResponseTime = newAvg;
+                        const counts = await fetchCounts();
+                        if (counts) {
+                            updateETA(counts.total_courses_from_json, counts.processed_courses);
+                        }
+                    }
+                }, 15 * 60 * 1000); 
+
+                async function getCurrentProcessingStatus() {
+                    try {
+                        const response = await fetch('/gemini-response-times');
+                        if (!response.ok) throw new Error('Network response was not ok');
+                        const data = await response.json();
+                        if (data.response_times.length === 0) return 'None';
+                        const latest = data.response_times[0];
+                        return latest.course_code + ' - ' + latest.assignment_title;
+                    } catch (error) {
+                        console.error('Error fetching current processing status:', error);
+                        return 'Error';
+                    }
+                }
+
+                async function updateCurrentStatus() {
+                    const currentStatus = await getCurrentProcessingStatus();
+                    document.getElementById('current-status').innerText = currentStatus || 'None';
+                }
+
+                async function updateCounts() {
+                    const counts = await fetchCounts();
+                    if (counts) {
+                        updateCountsUI(counts);
+                        updateETA(counts.total_courses_from_json, counts.processed_courses);
+                    }
+                }
+
+                async function initializeDashboardPage() {
+                    await initializeDashboard();
+                    await updateCurrentStatus();
+                }
+
+                initializeDashboardPage();
+
+                setInterval(updateCounts, 5000); 
+                setInterval(updateCurrentStatus, 5000); 
+            </script>
+        </body>
+        </html>
+    `);
+});
+
+app.get('/total-courses', (req, res) => {
+    res.json({ total_courses: totalCoursesFromJSON });
+});
+
+app.post('/report-question', async (req, res) => {
+    const { question_id, reason, reported_by } = req.body;
+
+    if (question_id === undefined || reason === undefined || reported_by === undefined) {
+        return res.status(400).json({ message: 'Missing required fields: question_id, reason, and reported_by.' });
+    }
+
+    if (!Number.isInteger(question_id) || question_id <= 0) {
+        return res.status(400).json({ message: 'Invalid question_id. It must be a positive integer.' });
+    }
+
+    if (typeof reason !== 'string' || reason.trim() === '') {
+        return res.status(400).json({ message: 'Invalid reason. It must be a non-empty string.' });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (typeof reported_by !== 'string' || !emailRegex.test(reported_by.trim())) {
+        return res.status(400).json({ message: 'Invalid reported_by. It must be a valid email address.' });
+    }
+
+    const client = await pool.connect();
+    try {
+        const questionCheck = await client.query('SELECT id FROM questions WHERE id = $1', [question_id]);
+        if (questionCheck.rowCount === 0) {
+            return res.status(404).json({ message: 'Question not found.' });
+        }
+
+        const insertQuery = `
+            INSERT INTO reported_questions (question_id, reason, reported_by)
+            VALUES ($1, $2, $3)
+            RETURNING id, question_id, reason, reported_by, reported_at;
+        `;
+        const insertResult = await client.query(insertQuery, [question_id, reason.trim(), reported_by.trim()]);
+
+        const report = insertResult.rows[0];
+        res.status(201).json({ 
+            message: 'Report submitted successfully.', 
+            report 
+        });
+    } catch (error) {
+        logger.error(`Error reporting question: ${error.message}`);
+        res.status(500).json({ message: 'An error occurred while submitting the report.' });
+    } finally {
+        client.release();
+    }
+});
+
 app.get('/dashboard', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -762,10 +1180,6 @@ app.get('/dashboard', (req, res) => {
         </body>
         </html>
     `);
-});
-
-app.get('/total-courses', (req, res) => {
-    res.json({ total_courses: totalCoursesFromJSON });
 });
 
 app.listen(PORT, () => {
