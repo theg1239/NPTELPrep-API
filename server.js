@@ -219,11 +219,12 @@ app.get('/courses', async (req, res) => {
                 c.course_code, 
                 c.course_name, 
                 COUNT(q.id) AS question_count,
-                ARRAY_AGG(DISTINCT a.week_number) AS weeks
+                ARRAY_AGG(DISTINCT a.week_number) AS weeks,
+                c.request_count
             FROM courses c
             LEFT JOIN assignments a ON c.id = a.course_id
             LEFT JOIN questions q ON a.id = q.assignment_id
-            GROUP BY c.course_code, c.course_name
+            GROUP BY c.course_code, c.course_name, c.request_count
             ORDER BY c.course_code;
         `;
         const { rows } = await pool.query(query);
@@ -231,7 +232,8 @@ app.get('/courses', async (req, res) => {
             course_code: row.course_code,
             course_name: row.course_name,
             question_count: parseInt(row.question_count, 10),
-            weeks: row.weeks ? row.weeks.sort((a, b) => a - b) : []
+            weeks: row.weeks ? row.weeks.sort((a, b) => a - b) : [],
+            request_count: parseInt(row.request_count, 10), 
         }));
         res.json({
             courses: formattedCourses
@@ -244,11 +246,31 @@ app.get('/courses', async (req, res) => {
 
 app.get('/courses/:courseCode', async (req, res) => {
     const { courseCode } = req.params;
+    const client = await pool.connect();
     try {
+        await client.query('BEGIN');
+
+        const incrementQuery = `
+            UPDATE courses
+            SET request_count = request_count + 1
+            WHERE course_code = $1
+            RETURNING request_count;
+        `;
+        const incrementResult = await client.query(incrementQuery, [courseCode]);
+
+        if (incrementResult.rowCount === 0) {
+            await client.query('ROLLBACK');
+            res.status(404).json({ message: 'Course not found.' });
+            return;
+        }
+
+        const newRequestCount = incrementResult.rows[0].request_count;
+
         const courseQuery = `
             SELECT 
                 c.course_code, 
-                c.course_name, 
+                c.course_name,
+                c.request_count, -- Include request_count
                 a.week_number, 
                 q.question_number, 
                 q.question_text, 
@@ -262,15 +284,17 @@ app.get('/courses/:courseCode', async (req, res) => {
             WHERE c.course_code = $1
             ORDER BY a.week_number, q.question_number, o.option_number;
         `;
-        const { rows } = await pool.query(courseQuery, [courseCode]);
+        const { rows } = await client.query(courseQuery, [courseCode]);
 
         if (rows.length === 0) {
+            await client.query('ROLLBACK');
             res.status(404).json({ message: 'Course not found or no data available.' });
             return;
         }
 
         const formattedData = {
             title: rows[0].course_name,
+            request_count: newRequestCount,
             weeks: []
         };
 
@@ -310,14 +334,17 @@ app.get('/courses/:courseCode', async (req, res) => {
             week.questions = Object.values(week.questions);
         });
 
+        await client.query('COMMIT');
         res.json(formattedData);
     } catch (error) {
+        await client.query('ROLLBACK');
         logger.error(`Error fetching course data for ${courseCode}: ${error.message}`);
         res.status(500).json({ message: 'An error occurred while fetching course data.' });
+    } finally {
+        client.release();
     }
 });
 
-// Optimized /counts endpoint using a single query
 app.get('/counts', async (req, res) => {
     try {
         const query = `
