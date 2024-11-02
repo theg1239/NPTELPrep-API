@@ -20,7 +20,8 @@ const allowedOrigins = [
     'http://localhost:3001',
     'https://examcooker.acmvit.in',
     'http://localhost:3000',
-    'http://localhost:4000'
+    'http://localhost:4000',
+    'https://k41d0nsf-3000.inc1.devtunnels.ms/'
 ];
 
 const corsOptions = {
