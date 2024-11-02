@@ -236,7 +236,6 @@ app.get('/', (req, res) => {
                 <li class="route-item"><a href="/courses/:courseCode">/courses/:courseCode</a> - Fetch specific course details</li>
                 <li class="route-item"><a href="/counts">/counts</a> - Get counts of courses, assignments, questions, options</li>
                 <li class="route-item"><a href="/dashboard">/dashboard</a> - View Dashboard</li>
-                <li class="route-item"><a href="/report-question">/report-question</a> - Report a question (POST)</li>
             </ul>
             <div class="footer">Made with ♥ for public usage</div>
         </body>
@@ -373,9 +372,7 @@ app.get('/courses/:courseCode', async (req, res) => {
                 week.questions = Object.values(week.questions);
             });
 
-            // Conditionally cache if request_count > 20
             if (request_count > 20) {
-                // Cache for 10 minutes (600 seconds)
                 await redisClient.setEx(cacheKey, 600, JSON.stringify(formattedData));
                 logger.info(`Caching /courses/${courseCode} data in Redis.`);
             }
