@@ -458,33 +458,36 @@ const verifyVITEmail = (req, res, next) => {
 
 app.post('/report-question', verifyVITEmail, async (req, res) => {
     const { question_text, reason } = req.body;
-    const reported_by = req.userEmail; 
+    const reported_by = req.userEmail; // email from middleware verification
 
-    if (question_text === undefined || reason === undefined) {
+    if (!question_text || !reason) {
         return res.status(400).json({ message: 'Missing required fields: question_text and reason.' });
-    }
-
-    if (typeof question_text !== 'string' || question_text.trim() === '') {
-        return res.status(400).json({ message: 'Invalid question_text. It must be a non-empty string.' });
-    }
-
-    if (typeof reason !== 'string' || reason.trim() === '') {
-        return res.status(400).json({ message: 'Invalid reason. It must be a non-empty string.' });
     }
 
     const client = await pool.connect();
     try {
+        // Check if the question has already been reported by this user
+        const existingReportQuery = `
+            SELECT id FROM reported_questions 
+            WHERE question_text = $1 AND reported_by = $2;
+        `;
+        const existingReportResult = await client.query(existingReportQuery, [question_text, reported_by]);
+
+        if (existingReportResult.rowCount > 0) {
+            return res.status(409).json({ message: 'You have already reported this question.' });
+        }
+
+        // Proceed with inserting a new report if no previous report exists
         const insertQuery = `
             INSERT INTO reported_questions (question_text, reason, reported_by)
             VALUES ($1, $2, $3)
             RETURNING id, question_text, reason, reported_by, reported_at;
         `;
-        const insertResult = await client.query(insertQuery, [question_text.trim(), reason.trim(), reported_by]);
+        const insertResult = await client.query(insertQuery, [question_text, reason, reported_by]);
 
-        const report = insertResult.rows[0];
         res.status(201).json({ 
             message: 'Report submitted successfully.', 
-            report 
+            report: insertResult.rows[0]
         });
     } catch (error) {
         logger.error(`Error reporting question: ${error.message}`);
@@ -493,6 +496,7 @@ app.post('/report-question', verifyVITEmail, async (req, res) => {
         client.release();
     }
 });
+
 
 app.get('/dashboard', (req, res) => {
     res.send(`
