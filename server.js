@@ -390,7 +390,17 @@ app.get('/courses/:courseCode', async (req, res) => {
 });
 
 app.get('/counts', async (req, res) => {
+    const cacheKey = 'counts_data';
+    const cacheExpiration = 3000; 
+
     try {
+        const cachedCounts = await redisClient.get(cacheKey);
+
+        if (cachedCounts) {
+            logger.info('Serving /counts from Redis cache.');
+            return res.json(JSON.parse(cachedCounts));
+        }
+
         const query = `
             SELECT 
                 (SELECT COUNT(*) FROM courses) AS processed_courses,
@@ -402,26 +412,31 @@ app.get('/counts', async (req, res) => {
         if (rows.length === 0) {
             throw new Error('No data returned from counts query.');
         }
+        
         const counts = rows[0];
         const processed_courses = parseInt(counts.processed_courses, 10);
         const total_assignments = parseInt(counts.total_assignments, 10);
         const total_questions = parseInt(counts.total_questions, 10);
         const total_options = parseInt(counts.total_options, 10);
 
-        logger.info(`Counts fetched - Processed Courses: ${processed_courses}, Total Assignments: ${total_assignments}, Total Questions: ${total_questions}, Total Options: ${total_options}`);
-
-        res.json({
+        const countsData = {
             total_courses_from_json: totalCoursesFromJSON,
             processed_courses,
             total_assignments,
             total_questions,
             total_options
-        });
+        };
+
+        await redisClient.setEx(cacheKey, cacheExpiration, JSON.stringify(countsData));
+        logger.info('Caching /counts data in Redis.');
+
+        res.json(countsData);
     } catch (error) {
         logger.error(`Error fetching counts: ${error.message}`);
         res.status(500).json({ message: 'An error occurred while fetching counts.' });
     }
 });
+
 
 app.get('/scraping-progress', async (req, res) => {
     try {
