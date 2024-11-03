@@ -345,7 +345,7 @@ app.get('/courses/:courseCode', async (req, res) => {
 
                 if (!weekMap[weekKey]) {
                     weekMap[weekKey] = {
-                        name: `${weekNumber}`,
+                        week: `${weekNumber}`,
                         questions: {}
                     };
                     formattedData.weeks.push(weekMap[weekKey]);
