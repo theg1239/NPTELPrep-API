@@ -20,6 +20,8 @@ const allowedOrigins = [
     'https://examcooker.acmvit.in',
     'http://localhost:3000',
     'http://localhost:4000',
+    'https://nptel-quiz-one.vercel.app/',
+    'https://examcooker.in'
 ];
 
 const corsOptions = {
