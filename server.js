@@ -364,8 +364,9 @@ app.get('/courses/:courseCode', async (req, res) => {
                 weekMap[weekKey].questions[questionNumber].options.push(`Option ${row.option_number}: ${row.option_text}`);
 
                 const correctOptions = row.correct_option.split(',').map(opt => opt.trim().toUpperCase());
+
                 if (correctOptions.includes(row.option_number.toUpperCase())) {
-                    weekMap[weekKey].questions[questionNumber].answer.push(`Option ${row.option_number}: ${row.option_text}`);
+                    weekMap[weekKey].questions[questionNumber].answer.push(row.option_number.toUpperCase());
                 }
             });
 
