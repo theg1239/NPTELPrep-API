@@ -17,11 +17,11 @@ app.use(express.json());
 
 const allowedOrigins = [
     'http://localhost:3001',
-    'https://examcooker.acmvit.in',
     'http://localhost:3000',
     'http://localhost:4000',
     'https://nptel-quiz-one.vercel.app/',
-    'https://examcooker.in'
+    'https://examcooker.in',
+    'https://nptelprep.in'
 ];
 
 const corsOptions = {
