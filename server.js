@@ -16,9 +16,6 @@ const PORT = process.env.PORT || 4000;
 app.use(express.json());
 
 const allowedOrigins = [
-    'http://localhost:3001',
-    'http://localhost:3000',
-    'http://localhost:4000',
     'https://nptel-quiz-one.vercel.app/',
     'https://examcooker.in',
     'https://nptelprep.in'
