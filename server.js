@@ -178,7 +178,7 @@ app.get('/', (req, res) => {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>NPTEL API Server</title>
+            <title>NPTELPrep API</title>
             <style>
                 body {
                     background-color: #121212;
