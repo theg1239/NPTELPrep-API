@@ -547,7 +547,7 @@ app.post('/report-question', verifyVITEmail, async (req, res) => {
 });
 
 
-/* app.get('/dashboard', (req, res) => {
+app.get('/dashboard', (req, res) => {
     res.send(`
         <!DOCTYPE html>
         <html lang="en">
@@ -861,7 +861,6 @@ app.post('/report-question', verifyVITEmail, async (req, res) => {
         </html>
     `);
 });
-*/
 
 app.get('/total-courses', (req, res) => {
     res.json({ total_courses: totalCoursesFromJSON });
