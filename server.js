@@ -52,6 +52,13 @@ const initializeDatabase = async () => {
                 request_count INTEGER DEFAULT 0
             );
         `);
+        
+        await client.query('CREATE INDEX IF NOT EXISTS idx_courses_code ON courses(course_code)');
+        await client.query('CREATE INDEX IF NOT EXISTS idx_assignments_course_id ON assignments(course_id)');
+        await client.query('CREATE INDEX IF NOT EXISTS idx_questions_assignment_id ON questions(assignment_id)');
+        await client.query('CREATE INDEX IF NOT EXISTS idx_options_question_id ON options(question_id)');
+        await client.query('CREATE INDEX IF NOT EXISTS idx_materials_course_id ON study_materials(course_id)');
+
         await client.query(`
             CREATE TABLE IF NOT EXISTS assignments (
                 id SERIAL PRIMARY KEY,
@@ -113,29 +120,8 @@ const initializeDatabase = async () => {
             );
         `);
 
-        /*
-        await client.query(`
-            CREATE OR REPLACE FUNCTION notify_cache_invalidation()
-            RETURNS trigger AS $$
-            BEGIN
-                PERFORM pg_notify('cache_invalidation', 'courses_all');
-                PERFORM pg_notify('cache_invalidation', 'course_' || NEW.course_code);
-                RETURN NULL;
-            END;
-            $$ LANGUAGE plpgsql;
-        `);
-
-        await client.query(`
-            DROP TRIGGER IF EXISTS courses_update_trigger ON courses;
-            CREATE TRIGGER courses_update_trigger
-            AFTER INSERT OR UPDATE OR DELETE ON courses
-            FOR EACH ROW
-            EXECUTE FUNCTION notify_cache_invalidation();
-        `);
-        */
-
         await client.query('COMMIT');
-        logger.info('Database tables initialized successfully.');
+        logger.info('Database tables and indexes initialized successfully.');
     } catch (error) {
         await client.query('ROLLBACK');
         logger.error(`Error initializing database: ${error.message}`);
@@ -288,123 +274,131 @@ app.get('/courses', async (req, res) => {
 app.get('/courses/:courseCode', async (req, res) => {
     const { courseCode } = req.params;
     const cacheKey = `course_${courseCode}`;
+    
     try {
-      const cachedCourse = await redisClient.get(cacheKey);
-      if (cachedCourse) {
-        logger.info(`Serving /courses/${courseCode} from Redis cache.`);
-        return res.json(JSON.parse(cachedCourse));
-      }
-  
-      const client = await pool.connect();
-      try {
-        const courseQuery = `
-                  WITH updated_course AS (
+        const cachedCourse = await redisClient.get(cacheKey);
+        if (cachedCourse) {
+            logger.info(`Serving /courses/${courseCode} from Redis cache.`);
+            return res.json(JSON.parse(cachedCourse));
+        }
+
+        const client = await pool.connect();
+        try {
+            await client.query('SET statement_timeout = 10000');
+            
+            const query = `
+                WITH updated_course AS (
                     UPDATE courses
                     SET request_count = request_count + 1
                     WHERE course_code = $1
                     RETURNING id, course_code, course_name, request_count
-                  )
-                  SELECT * FROM updated_course;
-              `;
-        const courseResult = await client.query(courseQuery, [courseCode]);
-        if (courseResult.rows.length === 0) {
-          res.status(404).json({ message: 'Course not found.' });
-          client.release();
-          return;
-        }
-        const course = courseResult.rows[0];
-  
-        const assignmentsQuery = `
-                  SELECT id, week_number, assignment_title, file_path
-                  FROM assignments
-                  WHERE course_id = $1
-                  ORDER BY week_number;
-              `;
-        const assignmentsResult = await client.query(assignmentsQuery, [course.id]);
-        const assignments = [];
-        for (const assignment of assignmentsResult.rows) {
-          const questionsQuery = `
-                      SELECT id, question_number, question_text, correct_option
-                      FROM questions
-                      WHERE assignment_id = $1
-                      ORDER BY question_number;
-                  `;
-          const questionsResult = await client.query(questionsQuery, [assignment.id]);
-          const questions = [];
-          for (const question of questionsResult.rows) {
-            const optionsQuery = `
-                          SELECT option_number, option_text
-                          FROM options
-                          WHERE question_id = $1
-                          ORDER BY option_number;
-                      `;
-            const optionsResult = await client.query(optionsQuery, [question.id]);
-            questions.push({
-              question_number: question.question_number,
-              question_text: question.question_text,
-              options: optionsResult.rows.map(option => ({
-                option_number: option.option_number,
-                option_text: option.option_text,
-              })),
-              correct_option: question.correct_option.split(',').map(opt => opt.trim().toUpperCase()),
+                ),
+                assignments_with_questions AS (
+                    SELECT 
+                        a.id as assignment_id,
+                        a.week_number,
+                        a.assignment_title,
+                        a.file_path,
+                        json_agg(
+                            json_build_object(
+                                'question_number', q.question_number,
+                                'question_text', q.question_text,
+                                'correct_option', q.correct_option,
+                                'options', (
+                                    SELECT json_agg(
+                                        json_build_object(
+                                            'option_number', o.option_number,
+                                            'option_text', o.option_text
+                                        )
+                                    )
+                                    FROM options o
+                                    WHERE o.question_id = q.id
+                                )
+                            )
+                        ) as questions
+                    FROM updated_course uc
+                    JOIN assignments a ON a.course_id = uc.id
+                    LEFT JOIN questions q ON q.assignment_id = a.id
+                    GROUP BY a.id, a.week_number, a.assignment_title, a.file_path
+                ),
+                materials_data AS (
+                    SELECT 
+                        json_agg(
+                            json_build_object(
+                                'id', sm.id,
+                                'title', sm.title,
+                                'type', sm.type,
+                                'weekNumber', sm.week_number,
+                                'description', sm.description,
+                                'content', sm.content,
+                                'url', sm.url,
+                                'mimetype', sm.mimetype,
+                                'languages', (
+                                    SELECT COALESCE(json_agg(
+                                        json_build_object(
+                                            'language', ml.language,
+                                            'url', ml.url
+                                        )
+                                    ), '[]'::json)
+                                    FROM material_languages ml
+                                    WHERE ml.material_id = sm.id
+                                )
+                            )
+                        ) as materials
+                    FROM updated_course uc
+                    LEFT JOIN study_materials sm ON sm.course_id = uc.id
+                )
+                SELECT 
+                    uc.*,
+                    (SELECT json_agg(row_to_json(a))
+                     FROM assignments_with_questions a) as assignments,
+                    (SELECT materials FROM materials_data) as materials
+                FROM updated_course uc;
+            `;
+
+            const result = await client.query(query, [courseCode]);
+
+            if (result.rows.length === 0) {
+                return res.status(404).json({ message: 'Course not found.' });
+            }
+
+            const courseData = result.rows[0];
+            const formattedData = {
+                course_code: courseData.course_code,
+                course_name: courseData.course_name,
+                assignments: courseData.assignments || [],
+                materials: courseData.materials || []
+            };
+
+            if (courseData.request_count > 20) {
+                await redisClient.setEx(cacheKey, 600, JSON.stringify(formattedData));
+                logger.info(`Caching /courses/${courseCode} data in Redis.`);
+            }
+
+            res.json(formattedData);
+
+        } catch (error) {
+            logger.error(`Error fetching course data for ${courseCode}: ${error.message}`);
+            
+            const staleCache = await redisClient.get(cacheKey);
+            if (staleCache) {
+                logger.info(`Serving stale cache for ${courseCode} due to timeout`);
+                return res.json(JSON.parse(staleCache));
+            }
+            
+            res.status(500).json({ 
+                message: 'An error occurred while fetching course data.',
+                error: error.message 
             });
-          }
-          assignments.push({
-            week_number: assignment.week_number,
-            assignment_title: assignment.assignment_title,
-            file_path: assignment.file_path,
-            questions,
-          });
+        } finally {
+            await client.query('RESET statement_timeout');
+            client.release();
         }
-  
-        const materialsQuery = `
-                  SELECT sm.*, array_agg(json_build_object('language', ml.language, 'url', ml.url)) as languages
-                  FROM study_materials sm
-                  LEFT JOIN material_languages ml ON sm.id = ml.material_id
-                  WHERE sm.course_id = $1
-                  GROUP BY sm.id
-                  ORDER BY sm.week_number NULLS LAST, sm.created_at;
-              `;
-        const materialsResult = await client.query(materialsQuery, [course.id]);
-        const materials = materialsResult.rows.map(material => ({
-          id: material.material_id,
-          title: material.title,
-          type: material.type,
-          weekNumber: material.week_number,
-          description: material.description,
-          content: material.content,
-          url: material.url,
-          mimetype: material.mimetype,
-          languages:
-            material.languages && material.languages[0] === null
-              ? []
-              : material.languages,
-        }));
-  
-        const formattedData = {
-          course_code: course.course_code,
-          course_name: course.course_name,
-          assignments,
-          materials,
-        };
-  
-        if (course.request_count > 20) {
-          await redisClient.setEx(cacheKey, 600, JSON.stringify(formattedData));
-          logger.info(`Caching /courses/${courseCode} data in Redis.`);
-        }
-  
-        res.json(formattedData);
-      } catch (error) {
-        logger.error(`Error fetching course data for ${courseCode}: ${error.message}`);
-        res.status(500).json({ message: 'An error occurred while fetching course data.' });
-      } finally {
-        client.release();
-      }
     } catch (error) {
-      logger.error(`Error in /courses/:courseCode: ${error.message}`);
-      res.status(500).json({ message: 'An internal server error occurred.' });
+        logger.error(`Error in /courses/:courseCode: ${error.message}`);
+        res.status(500).json({ message: 'An internal server error occurred.' });
     }
-  });
+});
 
 app.get('/counts', async (req, res) => {
     const cacheKey = 'counts_data';
