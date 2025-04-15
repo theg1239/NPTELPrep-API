@@ -418,6 +418,7 @@ app.get('/counts', async (req, res) => {
                 (SELECT COUNT(*) FROM assignments) AS total_assignments,
                 (SELECT COUNT(*) FROM questions) AS total_questions,
                 (SELECT COUNT(*) FROM options) AS total_options;
+                (SELECT COUNT(*) FROM study_materials) AS total_study_materials;
         `;
         const { rows } = await pool.query(query);
         if (rows.length === 0) {
@@ -429,13 +430,15 @@ app.get('/counts', async (req, res) => {
         const total_assignments = parseInt(counts.total_assignments, 10);
         const total_questions = parseInt(counts.total_questions, 10);
         const total_options = parseInt(counts.total_options, 10);
+        const total_study_materials = parseInt(counts.total_study_materials, 10);
 
         const countsData = {
             total_courses_from_json: totalCoursesFromJSON,
             processed_courses,
             total_assignments,
             total_questions,
-            total_options
+            total_options,
+            total_study_materials
         };
 
         await redisClient.setEx(cacheKey, cacheExpiration, JSON.stringify(countsData));
