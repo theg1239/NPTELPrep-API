@@ -288,106 +288,123 @@ app.get('/courses', async (req, res) => {
 app.get('/courses/:courseCode', async (req, res) => {
     const { courseCode } = req.params;
     const cacheKey = `course_${courseCode}`;
-
     try {
-        const cachedCourse = await redisClient.get(cacheKey);
-        if (cachedCourse) {
-            logger.info(`Serving /courses/${courseCode} from Redis cache.`);
-            return res.json(JSON.parse(cachedCourse));
-        }
-
-        const client = await pool.connect();
-        try {
-            const query = `
-                WITH updated_course AS (
+      const cachedCourse = await redisClient.get(cacheKey);
+      if (cachedCourse) {
+        logger.info(`Serving /courses/${courseCode} from Redis cache.`);
+        return res.json(JSON.parse(cachedCourse));
+      }
+  
+      const client = await pool.connect();
+      try {
+        const courseQuery = `
+                  WITH updated_course AS (
                     UPDATE courses
                     SET request_count = request_count + 1
                     WHERE course_code = $1
-                    RETURNING id, course_name, request_count
-                )
-                SELECT 
-                    updated_course.course_name,
-                    updated_course.request_count,
-                    a.week_number, 
-                    q.question_number, 
-                    q.question_text, 
-                    q.correct_option, 
-                    o.option_number, 
-                    o.option_text
-                FROM updated_course
-                JOIN assignments a ON updated_course.id = a.course_id
-                JOIN questions q ON a.id = q.assignment_id
-                JOIN options o ON q.id = o.question_id
-                ORDER BY a.week_number, q.question_number, o.option_number;
-            `;
-            const { rows } = await client.query(query, [courseCode]);
-
-            if (rows.length === 0) {
-                return res.status(404).json({ message: 'Course not found or no data available.' });
-            }
-
-            const { course_name, request_count } = rows[0];
-
-            const formattedData = {
-                title: course_name,
-                request_count: request_count,
-                weeks: []
-            };
-
-            const weekMap = {};
-
-            rows.forEach(row => {
-                const weekNumber = row.week_number;
-                const weekKey = `Week ${weekNumber}`;
-
-                if (!weekMap[weekKey]) {
-                    weekMap[weekKey] = {
-                        name: `${weekNumber}`,
-                        questions: {}
-                    };
-                    formattedData.weeks.push(weekMap[weekKey]);
-                }
-
-                const questionNumber = row.question_number;
-
-                if (!weekMap[weekKey].questions[questionNumber]) {
-                    weekMap[weekKey].questions[questionNumber] = {
-                        question: row.question_text,
-                        options: [],
-                        answer: []
-                    };
-                }
-
-                weekMap[weekKey].questions[questionNumber].options.push(`Option ${row.option_number}: ${row.option_text}`);
-
-                const correctOptions = row.correct_option.split(',').map(opt => opt.trim().toUpperCase());
-
-                if (correctOptions.includes(row.option_number.toUpperCase())) {
-                    weekMap[weekKey].questions[questionNumber].answer.push(row.option_number.toUpperCase());
-                }
-            });
-
-            formattedData.weeks.forEach(week => {
-                week.questions = Object.values(week.questions);
-            });
-
-            if (request_count > 20) {
-                await redisClient.setEx(cacheKey, 600, JSON.stringify(formattedData));
-                logger.info(`Caching /courses/${courseCode} data in Redis.`);
-            }
-
-            res.json(formattedData);
-        } catch (error) {
-            logger.error(`Error fetching course data for ${courseCode}: ${error.message}`);
-            res.status(500).json({ message: 'An error occurred while fetching course data.' });
-        } finally {
-            client.release();
+                    RETURNING id, course_code, course_name, request_count
+                  )
+                  SELECT * FROM updated_course;
+              `;
+        const courseResult = await client.query(courseQuery, [courseCode]);
+        if (courseResult.rows.length === 0) {
+          res.status(404).json({ message: 'Course not found.' });
+          client.release();
+          return;
         }
+        const course = courseResult.rows[0];
+  
+        const assignmentsQuery = `
+                  SELECT id, week_number, assignment_title, file_path
+                  FROM assignments
+                  WHERE course_id = $1
+                  ORDER BY week_number;
+              `;
+        const assignmentsResult = await client.query(assignmentsQuery, [course.id]);
+        const assignments = [];
+        for (const assignment of assignmentsResult.rows) {
+          const questionsQuery = `
+                      SELECT id, question_number, question_text, correct_option
+                      FROM questions
+                      WHERE assignment_id = $1
+                      ORDER BY question_number;
+                  `;
+          const questionsResult = await client.query(questionsQuery, [assignment.id]);
+          const questions = [];
+          for (const question of questionsResult.rows) {
+            const optionsQuery = `
+                          SELECT option_number, option_text
+                          FROM options
+                          WHERE question_id = $1
+                          ORDER BY option_number;
+                      `;
+            const optionsResult = await client.query(optionsQuery, [question.id]);
+            questions.push({
+              question_number: question.question_number,
+              question_text: question.question_text,
+              options: optionsResult.rows.map(option => ({
+                option_number: option.option_number,
+                option_text: option.option_text,
+              })),
+              correct_option: question.correct_option.split(',').map(opt => opt.trim().toUpperCase()),
+            });
+          }
+          assignments.push({
+            week_number: assignment.week_number,
+            assignment_title: assignment.assignment_title,
+            file_path: assignment.file_path,
+            questions,
+          });
+        }
+  
+        const materialsQuery = `
+                  SELECT sm.*, array_agg(json_build_object('language', ml.language, 'url', ml.url)) as languages
+                  FROM study_materials sm
+                  LEFT JOIN material_languages ml ON sm.id = ml.material_id
+                  WHERE sm.course_id = $1
+                  GROUP BY sm.id
+                  ORDER BY sm.week_number NULLS LAST, sm.created_at;
+              `;
+        const materialsResult = await client.query(materialsQuery, [course.id]);
+        const materials = materialsResult.rows.map(material => ({
+          id: material.material_id,
+          title: material.title,
+          type: material.type,
+          weekNumber: material.week_number,
+          description: material.description,
+          content: material.content,
+          url: material.url,
+          mimetype: material.mimetype,
+          languages:
+            material.languages && material.languages[0] === null
+              ? []
+              : material.languages,
+        }));
+  
+        const formattedData = {
+          course_code: course.course_code,
+          course_name: course.course_name,
+          assignments,
+          materials,
+        };
+  
+        if (course.request_count > 20) {
+          await redisClient.setEx(cacheKey, 600, JSON.stringify(formattedData));
+          logger.info(`Caching /courses/${courseCode} data in Redis.`);
+        }
+  
+        res.json(formattedData);
+      } catch (error) {
+        logger.error(`Error fetching course data for ${courseCode}: ${error.message}`);
+        res.status(500).json({ message: 'An error occurred while fetching course data.' });
+      } finally {
+        client.release();
+      }
     } catch (error) {
-        logger.error(`Error in /courses/:courseCode: ${error.message}`);
-        res.status(500).json({ message: 'An internal server error occurred.' });
+      logger.error(`Error in /courses/:courseCode: ${error.message}`);
+      res.status(500).json({ message: 'An internal server error occurred.' });
     }
-});
+  });
 
 app.get('/counts', async (req, res) => {
     const cacheKey = 'counts_data';
