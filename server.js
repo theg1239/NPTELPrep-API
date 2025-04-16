@@ -221,7 +221,9 @@ app.get('/', (req, res) => {
                 <li class="route-item"><a href="/courses/:courseCode">/courses/:courseCode</a> - Fetch specific course details</li>
                 <li class="route-item"><a href="/counts">/counts</a> - Get counts of courses, assignments, questions, options</li>
             </ul>
-            <div class="footer">Made with ♥ for public usage</div>
+            <div class="footer">
+                Made with ♥ for public usage - <a href="https://github.com/theg1239/nptel-api" target="_blank">GitHub</a>
+            </div>
         </body>
         </html>
     `);
@@ -727,7 +729,7 @@ app.get('/dashboard', (req, res) => {
 
             <script>
                 let avgResponseTime = 15000; 
-                let etaSeconds = 0; // Initialize to 0
+                let etaSeconds = 0;
 
                 async function fetchCounts() {
                     try {
