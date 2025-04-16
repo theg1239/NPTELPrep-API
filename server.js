@@ -417,7 +417,7 @@ app.get('/counts', async (req, res) => {
                 (SELECT COUNT(*) FROM courses) AS processed_courses,
                 (SELECT COUNT(*) FROM assignments) AS total_assignments,
                 (SELECT COUNT(*) FROM questions) AS total_questions,
-                (SELECT COUNT(*) FROM options) AS total_options;
+                (SELECT COUNT(*) FROM options) AS total_options,
                 (SELECT COUNT(*) FROM study_materials) AS total_study_materials;
         `;
         const { rows } = await pool.query(query);
@@ -450,7 +450,6 @@ app.get('/counts', async (req, res) => {
         res.status(500).json({ message: 'An error occurred while fetching counts.' });
     }
 });
-
 
 app.get('/scraping-progress', async (req, res) => {
     try {
@@ -523,7 +522,7 @@ const verifyVITEmail = (req, res, next) => {
 
 app.post('/report-question', verifyVITEmail, async (req, res) => {
     const { question_text, reason } = req.body;
-    const reported_by = req.userEmail; n
+    const reported_by = req.userEmail;
 
     if (!question_text || !reason) {
         return res.status(400).json({ message: 'Missing required fields: question_text and reason.' });
@@ -559,7 +558,6 @@ app.post('/report-question', verifyVITEmail, async (req, res) => {
         client.release();
     }
 });
-
 
 app.get('/dashboard', (req, res) => {
     res.send(`
