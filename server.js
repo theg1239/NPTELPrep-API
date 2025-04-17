@@ -49,7 +49,9 @@ const initializeDatabase = async () => {
                 id SERIAL PRIMARY KEY,
                 course_code VARCHAR(50) UNIQUE NOT NULL,
                 course_name VARCHAR(255) NOT NULL,
-                request_count INTEGER DEFAULT 0
+                request_count INTEGER DEFAULT 0,
+                video_count INTEGER DEFAULT 0,
+                transcript_count INTEGER DEFAULT 0
             );
         `);
         
@@ -245,11 +247,13 @@ app.get('/courses', async (req, res) => {
                 c.course_name, 
                 COUNT(q.id) AS question_count,
                 ARRAY_AGG(DISTINCT a.week_number) AS weeks,
-                c.request_count
+                c.request_count,
+                c.video_count,
+                c.transcript_count
             FROM courses c
             LEFT JOIN assignments a ON c.id = a.course_id
             LEFT JOIN questions q ON a.id = q.assignment_id
-            GROUP BY c.course_code, c.course_name, c.request_count
+            GROUP BY c.course_code, c.course_name, c.request_count, c.video_count, c.transcript_count
             ORDER BY c.course_code;
         `;
         const { rows } = await pool.query(query);
@@ -258,7 +262,9 @@ app.get('/courses', async (req, res) => {
             course_name: row.course_name,
             question_count: parseInt(row.question_count, 10),
             weeks: row.weeks ? row.weeks.sort((a, b) => a - b) : [],
-            request_count: parseInt(row.request_count, 10), 
+            request_count: parseInt(row.request_count, 10),
+            video_count: parseInt(row.video_count, 10),
+            transcript_count: parseInt(row.transcript_count, 10)
         }));
 
         await redisClient.setEx(cacheKey, 300, JSON.stringify({ courses: formattedCourses }));
@@ -293,7 +299,7 @@ app.get('/courses/:courseCode', async (req, res) => {
                     UPDATE courses
                     SET request_count = request_count + 1
                     WHERE course_code = $1
-                    RETURNING id, course_code, course_name, request_count
+                    RETURNING id, course_code, course_name, request_count, video_count, transcript_count
                 ),
                 assignments_with_questions AS (
                     SELECT 
@@ -369,7 +375,9 @@ app.get('/courses/:courseCode', async (req, res) => {
                 course_code: courseData.course_code,
                 course_name: courseData.course_name,
                 assignments: courseData.assignments || [],
-                materials: courseData.materials || []
+                materials: courseData.materials || [],
+                video_count: courseData.video_count,
+                transcript_count: courseData.transcript_count
             };
 
             if (courseData.request_count > 20) {
