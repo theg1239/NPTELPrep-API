@@ -312,6 +312,7 @@ app.get('/courses/:courseCode', async (req, res) => {
                                 'question_number', q.question_number,
                                 'question_text', q.question_text,
                                 'correct_option', q.correct_option,
+                                'content_type', q.content_type,
                                 'options', (
                                     SELECT json_agg(
                                         json_build_object(
