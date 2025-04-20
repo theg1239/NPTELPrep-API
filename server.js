@@ -284,7 +284,24 @@ app.get('/courses/:courseCode', async (req, res) => {
     const cacheKey = `course_${courseCode}`;
     
     try {
-        const cachedCourse = await redisClient.get(cacheKey);
+        const updateCountPromise = pool.query(`
+            UPDATE courses
+            SET request_count = request_count + 1
+            WHERE course_code = $1
+            RETURNING id
+        `, [courseCode]);
+        
+        const cachedCoursePromise = redisClient.get(cacheKey);
+        
+        const [updateResult, cachedCourse] = await Promise.all([
+            updateCountPromise,
+            cachedCoursePromise
+        ]);
+        
+        if (updateResult.rows.length === 0) {
+            return res.status(404).json({ message: 'Course not found.' });
+        }
+        
         if (cachedCourse) {
             logger.info(`Serving /courses/${courseCode} from Redis cache.`);
             return res.json(JSON.parse(cachedCourse));
@@ -295,11 +312,10 @@ app.get('/courses/:courseCode', async (req, res) => {
             await client.query('SET statement_timeout = 10000');
             
             const query = `
-                WITH updated_course AS (
-                    UPDATE courses
-                    SET request_count = request_count + 1
+                WITH course_data AS (
+                    SELECT id, course_code, course_name, request_count, video_count, transcript_count
+                    FROM courses
                     WHERE course_code = $1
-                    RETURNING id, course_code, course_name, request_count, video_count, transcript_count
                 ),
                 assignments_with_questions AS (
                     SELECT 
@@ -325,8 +341,8 @@ app.get('/courses/:courseCode', async (req, res) => {
                                 )
                             )
                         ) as questions
-                    FROM updated_course uc
-                    JOIN assignments a ON a.course_id = uc.id
+                    FROM course_data cd
+                    JOIN assignments a ON a.course_id = cd.id
                     LEFT JOIN questions q ON q.assignment_id = a.id
                     GROUP BY a.id, a.week_number, a.assignment_title, a.file_path
                 ),
@@ -354,15 +370,15 @@ app.get('/courses/:courseCode', async (req, res) => {
                                 )
                             )
                         ) as materials
-                    FROM updated_course uc
-                    LEFT JOIN study_materials sm ON sm.course_id = uc.id
+                    FROM course_data cd
+                    LEFT JOIN study_materials sm ON sm.course_id = cd.id
                 )
                 SELECT 
-                    uc.*,
+                    cd.*,
                     (SELECT json_agg(row_to_json(a))
                      FROM assignments_with_questions a) as assignments,
                     (SELECT materials FROM materials_data) as materials
-                FROM updated_course uc;
+                FROM course_data cd;
             `;
 
             const result = await client.query(query, [courseCode]);
@@ -381,7 +397,12 @@ app.get('/courses/:courseCode', async (req, res) => {
                 transcript_count: courseData.transcript_count
             };
 
-            if (courseData.request_count > 20) {
+            const requestCountResult = await client.query(
+                'SELECT request_count FROM courses WHERE course_code = $1',
+                [courseCode]
+            );
+            
+            if (requestCountResult.rows.length > 0 && requestCountResult.rows[0].request_count > 20) {
                 await redisClient.setEx(cacheKey, 600, JSON.stringify(formattedData));
                 logger.info(`Caching /courses/${courseCode} data in Redis.`);
             }
