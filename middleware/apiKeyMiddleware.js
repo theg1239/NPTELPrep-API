@@ -5,9 +5,14 @@ import { randomUUID } from 'crypto';
 import dotenv from 'dotenv';
 dotenv.config();
 
-const exemptDomains = (process.env.EXEMPT_DOMAINS || 'https://nptelprep.in')
+const exemptDomains = (process.env.EXEMPT_DOMAINS || 'nptelprep.in')
   .split(',')
-  .map(d => d.trim())
+  .map(d =>
+    d
+      .trim()
+      .replace(/^https?:\/\//, '') 
+      .replace(/\/$/, '')          
+  )
   .filter(Boolean);
 
 const pool = new Pool({
@@ -24,9 +29,24 @@ const publicRoutes = [
 ];
 
 export const apiKeyMiddleware = async (req, res, next) => {
-  const requestHost = req.hostname;
-  if (exemptDomains.includes(requestHost)) {
-    logger.info(`Bypassing API key checks for exempt domain: ${requestHost}`);
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+
+  const originHeader = req.header('Origin');
+  if (originHeader) {
+    try {
+      const originHost = new URL(originHeader).hostname;
+      if (exemptDomains.includes(originHost)) {
+        logger.info(`Bypassing API key checks for exempt origin: ${originHost}`);
+        return next();
+      }
+    } catch {
+    }
+  }
+
+  if (exemptDomains.includes(req.hostname)) {
+    logger.info(`Bypassing API key checks for exempt host: ${req.hostname}`);
     return next();
   }
 
@@ -47,7 +67,7 @@ export const apiKeyMiddleware = async (req, res, next) => {
   }
 
   try {
-    const keyResult = await pool.query(`
+    const { rows } = await pool.query(`
       SELECT
         ak.*,
         COUNT(au.id)::int AS usage_count
@@ -59,8 +79,8 @@ export const apiKeyMiddleware = async (req, res, next) => {
       GROUP BY ak.id
     `, [apiKey]);
 
-    if (keyResult.rows.length === 0) {
-      logger.warn(`API request with invalid API key: ${apiKey.slice(0, 10)}...`);
+    if (rows.length === 0) {
+      logger.warn(`Invalid API key: ${apiKey.slice(0,10)}…`);
       return res.status(401).json({
         error: 'Unauthorized',
         message: 'Invalid API key.',
@@ -68,10 +88,9 @@ export const apiKeyMiddleware = async (req, res, next) => {
       });
     }
 
-    const apiKeyData = keyResult.rows[0];
-
-    if (apiKeyData.isRevoked) {
-      logger.warn(`API request with revoked API key: ${apiKey.slice(0, 10)}...`);
+    const key = rows[0];
+    if (key.isRevoked) {
+      logger.warn(`Revoked API key: ${apiKey.slice(0,10)}…`);
       return res.status(401).json({
         error: 'Unauthorized',
         message: 'This API key has been revoked.',
@@ -79,14 +98,13 @@ export const apiKeyMiddleware = async (req, res, next) => {
       });
     }
 
-    if (apiKeyData.expiresAt && new Date(apiKeyData.expiresAt) < new Date()) {
-      logger.warn(`API request with expired API key: ${apiKey.slice(0, 10)}...`);
+    if (key.expiresAt && new Date(key.expiresAt) < new Date()) {
+      logger.warn(`Expired API key: ${apiKey.slice(0,10)}…`);
       await pool.query(`
         UPDATE "ApiKey"
         SET "isRevoked" = true
         WHERE id = $1
-      `, [apiKeyData.id]);
-
+      `, [key.id]);
       return res.status(401).json({
         error: 'Unauthorized',
         message: 'This API key has expired.',
@@ -94,38 +112,26 @@ export const apiKeyMiddleware = async (req, res, next) => {
       });
     }
 
-    if (apiKeyData.usage_count >= apiKeyData.rateLimit) {
-      logger.warn(`API request exceeded rate limit: ${apiKey.slice(0, 10)}...`);
-      await trackApiUsage(
-        apiKeyData.id,
-        req.path,
-        false,
-        req.ip,
-        req.get('User-Agent')
-      );
+    if (key.usage_count >= key.rateLimit) {
+      logger.warn(`Rate limit exceeded: ${apiKey.slice(0,10)}…`);
+      await trackApiUsage(key.id, req.path, false, req.ip, req.get('User-Agent'));
       return res.status(429).json({
         error: 'Rate Limit Exceeded',
-        message: `You have exceeded the rate limit of ${apiKeyData.rateLimit} requests per day.`,
+        message: `You have exceeded your daily limit of ${key.rateLimit} requests.`,
         documentation: 'https://dashboard.nptelprep.in'
       });
     }
 
-    await trackApiUsage(
-      apiKeyData.id,
-      req.path,
-      true,
-      req.ip,
-      req.get('User-Agent')
-    );
+    await trackApiUsage(key.id, req.path, true, req.ip, req.get('User-Agent'));
     await pool.query(`
       UPDATE "ApiKey"
       SET "lastUsedAt" = NOW()
       WHERE id = $1
-    `, [apiKeyData.id]);
+    `, [key.id]);
 
     next();
-  } catch (error) {
-    logger.error(`Error validating API key: ${error.message}`);
+  } catch (err) {
+    logger.error(`Error validating API key: ${err.message}`);
     return res.status(500).json({
       error: 'Internal Server Error',
       message: 'An error occurred while validating your API key.'
@@ -133,13 +139,7 @@ export const apiKeyMiddleware = async (req, res, next) => {
   }
 };
 
-async function trackApiUsage(
-  apiKeyId,
-  endpoint,
-  success = true,
-  ipAddress = null,
-  userAgent = null
-) {
+async function trackApiUsage(apiKeyId, endpoint, success = true, ipAddress = null, userAgent = null) {
   try {
     const id = randomUUID();
     await pool.query(`
@@ -155,7 +155,7 @@ async function trackApiUsage(
         $1, $2, $3, $4, $5, $6, NOW()
       )
     `, [id, apiKeyId, endpoint, success, ipAddress, userAgent]);
-  } catch (err) {
-    logger.error(`Error tracking API usage: ${err.message}`);
+  } catch (e) {
+    logger.error(`Error tracking API usage: ${e.message}`);
   }
 }
