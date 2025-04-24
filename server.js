@@ -162,78 +162,94 @@ loadCoursesJSON();
 
 app.get('/', (req, res) => {
     res.send(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>NPTELPrep API</title>
-            <style>
-                body {
-                    background-color: #121212;
-                    color: #ffffff;
-                    font-family: 'Courier New', Courier, monospace;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                    flex-direction: column;
-                    height: 100vh;
-                    margin: 0;
-                }
-                h1 {
-                    font-family: 'Press Start 2P', sans-serif;
-                    font-size: 2em;
-                    color: #ff4757;
-                    margin-bottom: 20px;
-                }
-                h2 {
-                    font-family: 'Courier New', Courier, monospace;
-                    font-size: 1.2em;
-                    color: #f9ca24;
-                    text-align: center;
-                    margin-top: 0;
-                }
-                .route-list {
-                    list-style-type: none;
-                    padding: 0;
-                    margin-top: 20px;
-                    text-align: center;
-                }
-                .route-item {
-                    margin: 10px 0;
-                    font-size: 1.1em;
-                }
-                .route-item a {
-                    color: #1e90ff;
-                    text-decoration: none;
-                    transition: color 0.3s ease;
-                }
-                .route-item a:hover {
-                    color: #ff4757;
-                }
-                .footer {
-                    margin-top: 30px;
-                    font-size: 0.9em;
-                    color: #7f8c8d;
-                }
-            </style>
-            <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-        </head>
-        <body>
-            <h1>NPTELPrep API</h1>
-            <h2>Server is running</h2>
-            <ul class="route-list">
-                <li class="route-item"><a href="/courses">/courses</a> - List all courses</li>
-                <li class="route-item"><a href="/courses/:courseCode">/courses/:courseCode</a> - Fetch specific course details</li>
-                <li class="route-item"><a href="/counts">/counts</a> - Get counts of courses, assignments, questions, options</li>
-            </ul>
-            <div class="footer">
-                Made with ♥ for public usage - <a href="https://github.com/theg1239/nptel-api" target="_blank">GitHub</a>
-            </div>
-        </body>
-        </html>
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>NPTELPrep API</title>
+        <style>
+          body {
+            background-color: #121212;
+            color: #ffffff;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            height: 100vh;
+            margin: 0;
+          }
+          h1 {
+            font-family: 'Press Start 2P', sans-serif;
+            font-size: 2em;
+            color: #ff4757;
+            margin-bottom: 20px;
+          }
+          h2 {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 1.2em;
+            color: #f9ca24;
+            text-align: center;
+            margin-top: 0;
+          }
+          .cta {
+            margin: 10px 0 20px;
+            font-size: 1em;
+            color: #f9ca24;
+          }
+          .cta a {
+            color: #1e90ff;
+            text-decoration: none;
+          }
+          .cta a:hover {
+            color: #ff4757;
+          }
+          .route-list {
+            list-style-type: none;
+            padding: 0;
+            margin-top: 20px;
+            text-align: center;
+          }
+          .route-item {
+            margin: 10px 0;
+            font-size: 1.1em;
+          }
+          .route-item a {
+            color: #1e90ff;
+            text-decoration: none;
+            transition: color 0.3s ease;
+          }
+          .route-item a:hover {
+            color: #ff4757;
+          }
+          .footer {
+            margin-top: 30px;
+            font-size: 0.9em;
+            color: #7f8c8d;
+          }
+        </style>
+        <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+      </head>
+      <body>
+        <h1>NPTELPrep API</h1>
+        <h2>Server is running</h2>
+        <div class="cta">
+          Get your free NPTELPrep API key at 
+          <a href="https://dashboard.nptelprep.in" target="_blank">dashboard.nptelprep.in</a>
+        </div>
+        <ul class="route-list">
+          <li class="route-item"><a href="/courses">/courses</a> - List all courses</li>
+          <li class="route-item"><a href="/courses/:courseCode">/courses/:courseCode</a> - Fetch specific course details</li>
+          <li class="route-item"><a href="/counts">/counts</a> - Get counts of courses, assignments, questions, options</li>
+        </ul>
+        <div class="footer">
+          Made with ♥ for public usage - <a href="https://github.com/theg1239/nptel-api" target="_blank">GitHub</a>
+        </div>
+      </body>
+      </html>
     `);
-});
+  });  
 
 app.get('/courses', async (req, res) => {
     try {
@@ -914,7 +930,7 @@ app.get('/total-courses', (req, res) => {
     res.json({ total_courses: totalCoursesFromJSON });
 });
 
-/* app.post('/report-question', async (req, res) => {
+app.post('/report-question', async (req, res) => {
     const { question_id, reason, reported_by } = req.body;
 
     if (question_id === undefined || reason === undefined || reported_by === undefined) {
@@ -960,339 +976,6 @@ app.get('/total-courses', (req, res) => {
         client.release();
     }
 });
-*/
-
-/* app.get('/dashboard', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Dashboard</title>
-            <style>
-                html, body {
-                    height: 100%;
-                    margin: 0;
-                    overflow-y: hidden; 
-                }
-                body {
-                    background-color: #121212;
-                    color: #ffffff;
-                    font-family: 'Courier New', Courier, monospace;
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
-                    padding: 20px;
-                    min-height: 100vh;
-                    box-sizing: border-box;
-                }
-                h1 {
-                    font-family: 'Press Start 2P', sans-serif;
-                    font-size: 2em;
-                    color: #ff4757;
-                    margin: 30px 0;
-                    text-align: center;
-                }
-                .stats {
-                    display: flex;
-                    flex-wrap: wrap;
-                    justify-content: center;
-                    gap: 15px;
-                    margin-bottom: 20px;
-                    width: 100%;
-                    max-width: 900px; 
-                }
-                .stat {
-                    background-color: #1e1e1e;
-                    padding: 10px 12px;
-                    border-radius: 8px;
-                    text-align: center;
-                    flex: 1 1 150px;
-                    max-width: 180px;
-                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-                    min-height: 90px;
-                }
-                .stat h2 {
-                    margin: 8px 0;
-                    font-size: 1em;
-                    color: #f9ca24;
-                }
-                .stat p {
-                    margin: 0;
-                    font-size: 1em;
-                    font-weight: bold;
-                }
-                .progress-container {
-                    width: 100%;
-                    max-width: 800px;
-                    background-color: #2c2c2c;
-                    border-radius: 20px;
-                    overflow: hidden;
-                    margin-bottom: 20px;
-                    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
-                    height: 45px;
-                    position: relative;
-                }
-                .progress-bar {
-                    height: 100%;
-                    width: 0%;
-                    background-color: #1abc9c;
-                    transition: width 1s ease-in-out, background-color 0.5s;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    color: #ffffff;
-                    font-weight: bold;
-                    font-size: 1em;
-                }
-                @media (max-width: 768px) {
-                    .progress-container {
-                        width: 90%;
-                        max-width: 100%; 
-                        height: 35px;
-                    }
-                    .progress-bar {
-                        font-size: 0.9em; 
-                    }
-                }
-                .eta, .current-status {
-                    font-size: 1em;
-                    text-align: center;
-                    margin: 10px 0;
-                }
-                .footer {
-                    font-size: 0.8em;
-                    color: #7f8c8d;
-                    margin: 20px 0;
-                }
-
-                @media (max-width: 768px) {
-                    body {
-                        padding-top: 10px;
-                        overflow-y: auto;
-                    }
-                    h1 {
-                        font-size: 1.8em;
-                        margin: 15px 0;
-                    }
-                    .stats {
-                        flex-direction: column;
-                        align-items: center;
-                    }
-                    .stat {
-                        width: 90%; 
-                        max-width: 250px;
-                        padding: 8px;
-                        min-height: 80px;
-                    }
-                    .stat h2, .stat p {
-                        font-size: 0.9em;
-                    }
-                    .progress-container {
-                        width: 100%;
-                        height: 40px;
-                    }
-                }
-            </style>
-            <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
-        </head>
-        <body>
-            <h1>Dashboard</h1>
-            <div class="stats">
-                <div class="stat">
-                    <h2>Total Courses</h2>
-                    <p id="total-courses">0 / 0</p>
-                </div>
-                <div class="stat">
-                    <h2>Total Assignments</h2>
-                    <p id="total-assignments">0</p>
-                </div>
-                <div class="stat">
-                    <h2>Total Questions</h2>
-                    <p id="total-questions">0</p>
-                </div>
-                <div class="stat">
-                    <h2>Total Options</h2>
-                    <p id="total-options">0</p>
-                </div>
-            </div>
-            <div class="progress-container">
-                <div class="progress-bar" id="progress-bar">0%</div>
-            </div>
-            <div class="eta">
-                <strong>Estimated Time Remaining:</strong> <span id="eta">Calculating...</span>
-            </div>
-            <div class="current-status">
-                <strong>Currently Processing:</strong> <span id="current-status">None</span>
-            </div>
-            <div class="footer">Made with ♥</div>
-
-            <script>
-                let avgResponseTime = 15000; // Default to 15 seconds if no data
-                let etaSeconds = 0; // Initialize to 0
-
-                // Fetch counts and update the DOM
-                async function fetchCounts() {
-                    try {
-                        const response = await fetch('/counts');
-                        if (!response.ok) throw new Error('Network response was not ok');
-                        const data = await response.json();
-                        return data;
-                    } catch (error) {
-                        console.error('Error fetching counts:', error);
-                        return null;
-                    }
-                }
-
-                // Fetch Gemini response times
-                async function fetchGeminiResponseTimes() {
-                    try {
-                        const response = await fetch('/gemini-response-times');
-                        if (!response.ok) throw new Error('Network response was not ok');
-                        const data = await response.json();
-                        return data.response_times;
-                    } catch (error) {
-                        console.error('Error fetching Gemini response times:', error);
-                        return [];
-                    }
-                }
-
-                // Calculate average response time
-                function calculateAverageResponseTime(responseTimes) {
-                    if (responseTimes.length === 0) return 15000; // Default to 15 seconds if no data
-                    const total = responseTimes.reduce((acc, curr) => acc + parseInt(curr.response_time_ms, 10), 0);
-                    const avg = total / responseTimes.length;
-                    return isFinite(avg) && avg > 0 ? avg : 15000;
-                }
-
-                // Format time as HH:MM:SS
-                function formatTime(seconds) {
-                    if (seconds <= 0) return 'Completed';
-                    const hours = String(Math.floor(seconds / 3600)).padStart(2, '0');
-                    const minutes = String(Math.floor((seconds % 3600) / 60)).padStart(2, '0');
-                    const secs = String(seconds % 60).padStart(2, '0');
-                    return \`\${hours}:\${minutes}:\${secs}\`;
-                }
-
-                // Update counts in the DOM
-                function updateCountsUI(counts) {
-                    const { total_courses_from_json, processed_courses, total_assignments, total_questions, total_options } = counts;
-                    document.getElementById('total-courses').innerText = \`\${processed_courses} / \${total_courses_from_json}\`;
-                    document.getElementById('total-assignments').innerText = total_assignments;
-                    document.getElementById('total-questions').innerText = total_questions;
-                    document.getElementById('total-options').innerText = total_options;
-
-                    const progressPercentage = total_courses_from_json > 0 
-                        ? Math.min((processed_courses / total_courses_from_json) * 100, 100).toFixed(2)
-                        : 0;
-                    const progressBar = document.getElementById('progress-bar');
-                    progressBar.style.width = progressPercentage + '%';
-                    progressBar.innerText = progressPercentage + '%';
-
-                    progressBar.style.backgroundColor = progressPercentage < 50 ? '#1abc9c' :
-                        progressPercentage < 80 ? '#f1c40f' : '#e74c3c';
-                }
-
-                // Update ETA based on current counts and avgResponseTime
-                function updateETA(totalCourses, processedCourses) {
-                    const remainingCourses = totalCourses - processedCourses;
-                    const etaMs = remainingCourses * avgResponseTime;
-                    etaSeconds = Math.floor(etaMs / 1000);
-
-                    if (etaSeconds < 0 || !isFinite(etaSeconds)) {
-                        etaSeconds = 0;
-                    }
-
-                    // Reset the countdown timer display
-                    document.getElementById('eta').innerText = formatTime(etaSeconds);
-                }
-
-                // Initialize counts and ETA on page load
-                async function initializeDashboard() {
-                    const counts = await fetchCounts();
-                    if (counts) {
-                        updateCountsUI(counts);
-                        const responseTimes = await fetchGeminiResponseTimes();
-                        avgResponseTime = calculateAverageResponseTime(responseTimes);
-                        updateETA(counts.total_courses_from_json, counts.processed_courses);
-                    } else {
-                        document.getElementById('eta').innerText = 'Unavailable';
-                        document.getElementById('current-status').innerText = 'Unavailable';
-                    }
-                }
-
-                // Start the countdown timer
-                setInterval(() => {
-                    if (etaSeconds > 0) {
-                        etaSeconds--;
-                        document.getElementById('eta').innerText = formatTime(etaSeconds);
-                    } else {
-                        document.getElementById('eta').innerText = 'Completed';
-                    }
-                }, 1000);
-
-                // Recalculate the average response time every 15 minutes
-                setInterval(async () => {
-                    const responseTimes = await fetchGeminiResponseTimes();
-                    const newAvg = calculateAverageResponseTime(responseTimes);
-                    if (newAvg !== avgResponseTime) {
-                        avgResponseTime = newAvg;
-                        const counts = await fetchCounts();
-                        if (counts) {
-                            updateETA(counts.total_courses_from_json, counts.processed_courses);
-                        }
-                    }
-                }, 15 * 60 * 1000); // 15 minutes in milliseconds
-
-                // Fetch and set the current processing status
-                async function getCurrentProcessingStatus() {
-                    try {
-                        const response = await fetch('/gemini-response-times');
-                        if (!response.ok) throw new Error('Network response was not ok');
-                        const data = await response.json();
-                        if (data.response_times.length === 0) return 'None';
-                        const latest = data.response_times[0];
-                        return latest.course_code + ' - ' + latest.assignment_title;
-                    } catch (error) {
-                        console.error('Error fetching current processing status:', error);
-                        return 'Error';
-                    }
-                }
-
-                // Update the current processing status in the DOM
-                async function updateCurrentStatus() {
-                    const currentStatus = await getCurrentProcessingStatus();
-                    document.getElementById('current-status').innerText = currentStatus || 'None';
-                }
-
-                // Fetch and update counts every 5 seconds
-                async function updateCounts() {
-                    const counts = await fetchCounts();
-                    if (counts) {
-                        updateCountsUI(counts);
-                        updateETA(counts.total_courses_from_json, counts.processed_courses);
-                    }
-                }
-
-                // Initialize the dashboard on page load
-                async function initializeDashboardPage() {
-                    await initializeDashboard();
-                    await updateCurrentStatus();
-                }
-
-                // Initial dashboard setup
-                initializeDashboardPage();
-
-                // Set intervals for periodic updates
-                setInterval(updateCounts, 5000); // Update counts every 5 seconds
-                setInterval(updateCurrentStatus, 5000); // Update current status every 5 seconds
-            </script>
-        </body>
-        </html>
-    `);
-});
-*/
 
 app.get('/health', (req, res) => {
     res.status(200).json({

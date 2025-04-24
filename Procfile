@@ -1,3 +1,1 @@
-release: npx prisma generate
-
-web: node server.js
+web: npx prisma generate && node server.js
