@@ -35,6 +35,10 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
+import { apiKeyMiddleware } from './middleware/apiKeyMiddleware.js';
+
+app.use(apiKeyMiddleware);
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
@@ -1289,6 +1293,55 @@ app.get('/total-courses', (req, res) => {
     `);
 });
 */
+
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'up',
+        timestamp: new Date().toISOString(),
+        version: process.env.VERSION || '1.0.0'
+    });
+});
+
+app.get('/counts', async (req, res) => {
+    try {
+        const cacheKey = 'api_counts';
+        const cachedCounts = await redisClient.get(cacheKey);
+
+        if (cachedCounts) {
+            logger.info('Serving /counts from Redis cache.');
+            return res.json(JSON.parse(cachedCounts));
+        }
+
+        const client = await pool.connect();
+        try {
+            const coursesQuery = await client.query('SELECT COUNT(*) as count FROM courses');
+            const assignmentsQuery = await client.query('SELECT COUNT(*) as count FROM assignments');
+            const questionsQuery = await client.query('SELECT COUNT(*) as count FROM questions');
+            const optionsQuery = await client.query('SELECT COUNT(*) as count FROM options');
+            
+            const progressQuery = await client.query('SELECT * FROM scraping_progress ORDER BY id DESC LIMIT 1');
+            
+            const counts = {
+                total_courses: parseInt(coursesQuery.rows[0].count, 10),
+                total_assignments: parseInt(assignmentsQuery.rows[0].count, 10),
+                total_questions: parseInt(questionsQuery.rows[0].count, 10),
+                total_options: parseInt(optionsQuery.rows[0].count, 10),
+                total_courses_from_json: totalCoursesFromJSON,
+                progress: progressQuery.rows.length > 0 ? progressQuery.rows[0] : null
+            };
+            
+            await redisClient.setEx(cacheKey, 300, JSON.stringify(counts));
+            logger.info('Caching /counts data in Redis.');
+            
+            res.json(counts);
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        logger.error(`Error fetching counts: ${error.message}`);
+        res.status(500).json({ message: 'An error occurred while fetching counts.' });
+    }
+});
 
 app.listen(PORT, () => {
     logger.info(`API Server is running on port ${PORT}`);
