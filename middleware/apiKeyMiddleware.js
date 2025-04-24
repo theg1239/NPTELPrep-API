@@ -5,6 +5,11 @@ import { randomUUID } from 'crypto';
 import dotenv from 'dotenv';
 dotenv.config();
 
+const exemptDomains = (process.env.EXEMPT_DOMAINS || 'https://nptelprep.in')
+  .split(',')
+  .map(d => d.trim())
+  .filter(Boolean);
+
 const pool = new Pool({
   connectionString: process.env.AUTH_DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production'
@@ -19,6 +24,12 @@ const publicRoutes = [
 ];
 
 export const apiKeyMiddleware = async (req, res, next) => {
+  const requestHost = req.hostname;
+  if (exemptDomains.includes(requestHost)) {
+    logger.info(`Bypassing API key checks for exempt domain: ${requestHost}`);
+    return next();
+  }
+
   if (publicRoutes.some(route =>
     req.path === route || req.path.startsWith(`${route}/`)
   )) {
@@ -31,16 +42,15 @@ export const apiKeyMiddleware = async (req, res, next) => {
     return res.status(401).json({
       error: 'Unauthorized',
       message: 'API key is required. Please provide a valid API key in the X-API-Key header.',
-      documentation: 'https://nptelprep.in/dashboard/keys'
+      documentation: 'https://dashboard.nptelprep.in'
     });
   }
 
   try {
-    // 1) Fetch the key + today's usage count
     const keyResult = await pool.query(`
       SELECT
         ak.*,
-        COUNT(au.id)::int as usage_count
+        COUNT(au.id)::int AS usage_count
       FROM "ApiKey" ak
       LEFT JOIN "ApiUsage" au
         ON ak.id = au."apiKeyId"
@@ -54,26 +64,23 @@ export const apiKeyMiddleware = async (req, res, next) => {
       return res.status(401).json({
         error: 'Unauthorized',
         message: 'Invalid API key.',
-        documentation: 'https://nptelprep.in/dashboard/keys'
+        documentation: 'https://dashboard.nptelprep.in'
       });
     }
 
     const apiKeyData = keyResult.rows[0];
 
-    // 2) Revoked?
     if (apiKeyData.isRevoked) {
       logger.warn(`API request with revoked API key: ${apiKey.slice(0, 10)}...`);
       return res.status(401).json({
         error: 'Unauthorized',
         message: 'This API key has been revoked.',
-        documentation: 'https://nptelprep.in/dashboard/keys'
+        documentation: 'https://dashboard.nptelprep.in'
       });
     }
 
-    // 3) Expired?
     if (apiKeyData.expiresAt && new Date(apiKeyData.expiresAt) < new Date()) {
       logger.warn(`API request with expired API key: ${apiKey.slice(0, 10)}...`);
-      // auto‐revoke expired key
       await pool.query(`
         UPDATE "ApiKey"
         SET "isRevoked" = true
@@ -83,11 +90,10 @@ export const apiKeyMiddleware = async (req, res, next) => {
       return res.status(401).json({
         error: 'Unauthorized',
         message: 'This API key has expired.',
-        documentation: 'https://nptelprep.in/dashboard/keys'
+        documentation: 'https://dashboard.nptelprep.in'
       });
     }
 
-    // 4) Rate limit?
     if (apiKeyData.usage_count >= apiKeyData.rateLimit) {
       logger.warn(`API request exceeded rate limit: ${apiKey.slice(0, 10)}...`);
       await trackApiUsage(
@@ -100,11 +106,10 @@ export const apiKeyMiddleware = async (req, res, next) => {
       return res.status(429).json({
         error: 'Rate Limit Exceeded',
         message: `You have exceeded the rate limit of ${apiKeyData.rateLimit} requests per day.`,
-        documentation: 'https://nptelprep.in/dashboard/keys'
+        documentation: 'https://dashboard.nptelprep.in'
       });
     }
 
-    // 5) All good → log success, bump lastUsedAt, then continue
     await trackApiUsage(
       apiKeyData.id,
       req.path,
@@ -112,7 +117,6 @@ export const apiKeyMiddleware = async (req, res, next) => {
       req.ip,
       req.get('User-Agent')
     );
-
     await pool.query(`
       UPDATE "ApiKey"
       SET "lastUsedAt" = NOW()
@@ -129,7 +133,13 @@ export const apiKeyMiddleware = async (req, res, next) => {
   }
 };
 
-async function trackApiUsage(apiKeyId, endpoint, success = true, ipAddress = null, userAgent = null) {
+async function trackApiUsage(
+  apiKeyId,
+  endpoint,
+  success = true,
+  ipAddress = null,
+  userAgent = null
+) {
   try {
     const id = randomUUID();
     await pool.query(`
