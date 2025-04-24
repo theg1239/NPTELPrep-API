@@ -5,14 +5,14 @@ import { randomUUID } from 'crypto';
 import dotenv from 'dotenv';
 dotenv.config();
 
-const exemptDomains = (process.env.EXEMPT_DOMAINS || 'nptelprep.in')
+const exemptOrigins = (process.env.EXEMPT_ORIGINS || '')
   .split(',')
-  .map(d =>
-    d
-      .trim()
-      .replace(/^https?:\/\//, '') 
-      .replace(/\/$/, '')          
-  )
+  .map(u => u.trim())
+  .filter(Boolean)
+  .map(u => {
+    try { return new URL(u).hostname; }
+    catch { return null; }
+  })
   .filter(Boolean);
 
 const pool = new Pool({
@@ -22,32 +22,23 @@ const pool = new Pool({
     : false,
 });
 
-const publicRoutes = [
-  '/',
-  '/counts',
-  '/health'
-];
+const publicRoutes = ['/', '/counts', '/health'];
 
 export const apiKeyMiddleware = async (req, res, next) => {
   if (req.method === 'OPTIONS') {
     return next();
   }
 
-  const originHeader = req.header('Origin');
-  if (originHeader) {
+  const origin = req.header('Origin');
+  if (origin) {
     try {
-      const originHost = new URL(originHeader).hostname;
-      if (exemptDomains.includes(originHost)) {
-        logger.info(`Bypassing API key checks for exempt origin: ${originHost}`);
+      const originHost = new URL(origin).hostname;
+      if (exemptOrigins.includes(originHost)) {
+        logger.info(`Bypassing API key checks for frontend origin: ${originHost}`);
         return next();
       }
     } catch {
     }
-  }
-
-  if (exemptDomains.includes(req.hostname)) {
-    logger.info(`Bypassing API key checks for exempt host: ${req.hostname}`);
-    return next();
   }
 
   if (publicRoutes.some(route =>
@@ -61,7 +52,7 @@ export const apiKeyMiddleware = async (req, res, next) => {
     logger.warn(`API request without API key: ${req.path}`);
     return res.status(401).json({
       error: 'Unauthorized',
-      message: 'API key is required. Please provide a valid API key in the X-API-Key header.',
+      message: 'API key is required in the X-API-Key header.',
       documentation: 'https://dashboard.nptelprep.in'
     });
   }
@@ -141,20 +132,11 @@ export const apiKeyMiddleware = async (req, res, next) => {
 
 async function trackApiUsage(apiKeyId, endpoint, success = true, ipAddress = null, userAgent = null) {
   try {
-    const id = randomUUID();
     await pool.query(`
       INSERT INTO "ApiUsage" (
-        id,
-        "apiKeyId",
-        endpoint,
-        success,
-        "ipAddress",
-        "userAgent",
-        timestamp
-      ) VALUES (
-        $1, $2, $3, $4, $5, $6, NOW()
-      )
-    `, [id, apiKeyId, endpoint, success, ipAddress, userAgent]);
+        id, "apiKeyId", endpoint, success, "ipAddress", "userAgent", timestamp
+      ) VALUES ($1,$2,$3,$4,$5,$6,NOW())
+    `, [randomUUID(), apiKeyId, endpoint, success, ipAddress, userAgent]);
   } catch (e) {
     logger.error(`Error tracking API usage: ${e.message}`);
   }
