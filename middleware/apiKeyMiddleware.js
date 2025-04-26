@@ -6,7 +6,7 @@ dotenv.config()
 
 const prisma = new PrismaClient()
 
-const publicRoutes = ['/', '/counts', '/health']
+const publicRoutes = ['/', '/counts', '/health','/report-question']
 
 export const apiKeyMiddleware = async (req, res, next) => {
   if (

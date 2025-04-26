@@ -118,14 +118,18 @@ const initializeDatabase = async () => {
         `);
         await client.query(`
             CREATE TABLE IF NOT EXISTS reported_questions (
-                id SERIAL PRIMARY KEY,
-                question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
-                reason TEXT NOT NULL,
-                reported_by VARCHAR(255) NOT NULL,
-                reported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+              id             SERIAL         PRIMARY KEY,
+              question_text  TEXT           NOT NULL,
+              course_code    VARCHAR(50)    NOT NULL
+                                REFERENCES courses(course_code)
+                                ON DELETE CASCADE,
+              reason         TEXT           NOT NULL,
+              reported_by    VARCHAR(255)   NOT NULL,
+              reported_at    TIMESTAMPTZ    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              CONSTRAINT uq_report UNIQUE (question_text, course_code, reported_by)
             );
-        `);
-
+          `);
+          
         await client.query('COMMIT');
         logger.info('Database tables and indexes initialized successfully.');
     } catch (error) {
@@ -554,7 +558,7 @@ app.get('/gemini-response-times', async (req, res) => {
     }
 });
 
-const verifyVITEmail = (req, res, next) => {
+const verifyEmail = (req, res, next) => {
     const authHeader = req.headers.authorization;
 
     if (!authHeader) {
@@ -563,53 +567,78 @@ const verifyVITEmail = (req, res, next) => {
 
     const email = authHeader;
 
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email) || !email.endsWith('@vitstudent.ac.in')) {
-        return res.status(403).json({ message: 'Forbidden: Invalid email domain' });
-    }
-
     req.userEmail = email;
     next();
 };
 
-app.post('/report-question', verifyVITEmail, async (req, res) => {
-    const { question_text, reason } = req.body;
+app.post('/report-question', verifyEmail, async (req, res) => {
+    const { question_text, reason, course_code } = req.body;
     const reported_by = req.userEmail;
-
-    if (!question_text || !reason) {
-        return res.status(400).json({ message: 'Missing required fields: question_text and reason.' });
+  
+    if (!question_text || !reason || !course_code) {
+      return res
+        .status(400)
+        .json({ message: 'Missing required fields: question_text, reason, and course_code.' });
     }
-
+    if (typeof question_text !== 'string' || !question_text.trim()) {
+      return res
+        .status(400)
+        .json({ message: 'Invalid question_text. Must be a non-empty string.' });
+    }
+    if (typeof reason !== 'string' || !reason.trim()) {
+      return res
+        .status(400)
+        .json({ message: 'Invalid reason. Must be a non-empty string.' });
+    }
+    if (typeof course_code !== 'string' || !course_code.trim()) {
+      return res
+        .status(400)
+        .json({ message: 'Invalid course_code. Must be a non-empty string.' });
+    }
+  
     const client = await pool.connect();
     try {
-        const existingReportQuery = `
-            SELECT id FROM reported_questions 
-            WHERE question_text = $1 AND reported_by = $2;
-        `;
-        const existingReportResult = await client.query(existingReportQuery, [question_text, reported_by]);
-
-        if (existingReportResult.rowCount > 0) {
-            return res.status(409).json({ message: 'You have already reported this question.' });
-        }
-
-        const insertQuery = `
-            INSERT INTO reported_questions (question_text, reason, reported_by)
-            VALUES ($1, $2, $3)
-            RETURNING id, question_text, reason, reported_by, reported_at;
-        `;
-        const insertResult = await client.query(insertQuery, [question_text, reason, reported_by]);
-
-        res.status(201).json({ 
-            message: 'Report submitted successfully.', 
-            report: insertResult.rows[0]
-        });
+      const existing = await client.query(
+        `SELECT id
+           FROM reported_questions
+          WHERE question_text = $1
+            AND course_code   = $2
+            AND reported_by   = $3`,
+        [question_text.trim(), course_code.trim(), reported_by]
+      );
+      if (existing.rowCount > 0) {
+        return res
+          .status(409)
+          .json({ message: 'You have already reported this question for this course.' });
+      }
+  
+      const insertResult = await client.query(
+        `INSERT INTO reported_questions
+           (question_text, course_code, reason, reported_by)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, question_text, course_code, reason, reported_by, reported_at;`,
+        [question_text.trim(), course_code.trim(), reason.trim(), reported_by]
+      );
+  
+      res.status(201).json({
+        message: 'Report submitted successfully.',
+        report: insertResult.rows[0],
+      });
+  
     } catch (error) {
-        logger.error(`Error reporting question: ${error.message}`);
-        res.status(500).json({ message: 'An error occurred while submitting the report.' });
+      if (error.code === '23505') {
+        return res
+          .status(409)
+          .json({ message: 'You have already reported this question for this course.' });
+      }
+      logger.error(`Error reporting question: ${error.message}`);
+      res.status(500).json({
+        message: 'An error occurred while submitting the report.',
+      });
     } finally {
-        client.release();
+      client.release();
     }
-});
+  });  
 
 app.get('/dashboard', (req, res) => {
     res.send(`
@@ -928,53 +957,6 @@ app.get('/dashboard', (req, res) => {
 
 app.get('/total-courses', (req, res) => {
     res.json({ total_courses: totalCoursesFromJSON });
-});
-
-app.post('/report-question', async (req, res) => {
-    const { question_id, reason, reported_by } = req.body;
-
-    if (question_id === undefined || reason === undefined || reported_by === undefined) {
-        return res.status(400).json({ message: 'Missing required fields: question_id, reason, and reported_by.' });
-    }
-
-    if (!Number.isInteger(question_id) || question_id <= 0) {
-        return res.status(400).json({ message: 'Invalid question_id. It must be a positive integer.' });
-    }
-
-    if (typeof reason !== 'string' || reason.trim() === '') {
-        return res.status(400).json({ message: 'Invalid reason. It must be a non-empty string.' });
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (typeof reported_by !== 'string' || !emailRegex.test(reported_by.trim())) {
-        return res.status(400).json({ message: 'Invalid reported_by. It must be a valid email address.' });
-    }
-
-    const client = await pool.connect();
-    try {
-        const questionCheck = await client.query('SELECT id FROM questions WHERE id = $1', [question_id]);
-        if (questionCheck.rowCount === 0) {
-            return res.status(404).json({ message: 'Question not found.' });
-        }
-
-        const insertQuery = `
-            INSERT INTO reported_questions (question_id, reason, reported_by)
-            VALUES ($1, $2, $3)
-            RETURNING id, question_id, reason, reported_by, reported_at;
-        `;
-        const insertResult = await client.query(insertQuery, [question_id, reason.trim(), reported_by.trim()]);
-
-        const report = insertResult.rows[0];
-        res.status(201).json({ 
-            message: 'Report submitted successfully.', 
-            report 
-        });
-    } catch (error) {
-        logger.error(`Error reporting question: ${error.message}`);
-        res.status(500).json({ message: 'An error occurred while submitting the report.' });
-    } finally {
-        client.release();
-    }
 });
 
 app.get('/health', (req, res) => {
