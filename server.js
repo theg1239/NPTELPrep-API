@@ -573,7 +573,7 @@ const verifyEmail = (req, res, next) => {
 
 app.post('/report-question', verifyEmail, async (req, res) => {
     const { question_text, reason, course_code } = req.body;
-    const reported_by = req.userEmail;
+    const reported_by = req.userEmail || 'anonymous';
   
     if (!question_text || !reason || !course_code) {
       return res
@@ -598,29 +598,20 @@ app.post('/report-question', verifyEmail, async (req, res) => {
   
     const client = await pool.connect();
     try {
-      const existing = await client.query(
-        `SELECT id
-           FROM reported_questions
-          WHERE question_text = $1
-            AND course_code   = $2
-            AND reported_by   = $3`,
-        [question_text.trim(), course_code.trim(), reported_by]
-      );
-      if (existing.rowCount > 0) {
-        return res
-          .status(409)
-          .json({ message: 'You have already reported this question for this course.' });
-      }
-  
       const insertResult = await client.query(
         `INSERT INTO reported_questions
            (question_text, course_code, reason, reported_by)
          VALUES ($1, $2, $3, $4)
          RETURNING id, question_text, course_code, reason, reported_by, reported_at;`,
-        [question_text.trim(), course_code.trim(), reason.trim(), reported_by]
+        [
+          question_text.trim(),
+          course_code.trim(),
+          reason.trim(),
+          reported_by
+        ]
       );
   
-      res.status(201).json({
+      return res.status(201).json({
         message: 'Report submitted successfully.',
         report: insertResult.rows[0],
       });
@@ -631,14 +622,16 @@ app.post('/report-question', verifyEmail, async (req, res) => {
           .status(409)
           .json({ message: 'You have already reported this question for this course.' });
       }
+  
       logger.error(`Error reporting question: ${error.message}`);
-      res.status(500).json({
-        message: 'An error occurred while submitting the report.',
-      });
+      return res
+        .status(500)
+        .json({ message: 'An error occurred while submitting the report.' });
+  
     } finally {
       client.release();
     }
-  });  
+  });
 
 app.get('/dashboard', (req, res) => {
     res.send(`
