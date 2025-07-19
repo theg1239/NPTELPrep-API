@@ -37,7 +37,7 @@ app.use(cors(corsOptions));
 
 import { apiKeyMiddleware } from './middleware/apiKeyMiddleware.js';
 
-app.use(apiKeyMiddleware);
+// app.use(apiKeyMiddleware);
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
