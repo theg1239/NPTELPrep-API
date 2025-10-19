@@ -8,6 +8,7 @@ import TuiWalkthrough from "@/components/tui/TuiWalkthrough";
 
 const NAV_ITEMS = [
   { label: "Dashboard", path: "/dashboard", key: "d" },
+  { label: "Changes", path: "/dashboard/changes", key: "c" },
   { label: "API Keys", path: "/dashboard/keys", key: "k" },
   { label: "Usage", path: "/dashboard/usage", key: "u" },
   { label: "Settings", path: "/dashboard/settings", key: "s" },

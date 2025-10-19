@@ -15,15 +15,27 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 app.use(express.json());
 
+const normalizeOrigin = (value) => {
+    if (!value) return '';
+    return value.endsWith('/') ? value.slice(0, -1) : value;
+};
+
 const allowedOrigins = [
-    'https://nptel-quiz-one.vercel.app/',
+    'https://nptel-quiz-one.vercel.app',
     'https://examcooker.in',
-    'https://nptelprep.in'
-];
+    'https://nptelprep.in',
+    'http://localhost:3000',
+].map(normalizeOrigin);
+
+const agentOrigin = normalizeOrigin(process.env.AGENT_ORIGIN);
+if (agentOrigin) {
+    allowedOrigins.push(agentOrigin);
+}
 
 const corsOptions = {
     origin: function (origin, callback) {
-        if (!origin || allowedOrigins.includes(origin)) {
+        const normalizedOrigin = normalizeOrigin(origin);
+        if (!origin || allowedOrigins.includes(normalizedOrigin)) {
             callback(null, true);
         } else {
             callback(new Error('Not allowed by CORS'));

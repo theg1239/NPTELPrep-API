@@ -5,20 +5,37 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "agent": "npm run agent:build && npm run agent:start",
+    "agent:build": "tsc --project agent/tsconfig.json",
+    "agent:start": "node agent/dist/index.js",
+    "reviewer": "npm run reviewer:build && npm run reviewer:start",
+    "reviewer:build": "tsc --project agent/tsconfig.json",
+    "reviewer:start": "node agent/dist/reviewerIndex.js",
+    "repair:changes": "node --loader ts-node/esm scripts/repairStagedChanges.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@ai-sdk/google": "^2.0.23",
     "@prisma/client": "^6.6.0",
+    "ai": "^5.0.76",
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
+    "p-retry": "^7.1.0",
     "pg": "^8.13.1",
     "prisma": "^6.6.0",
     "redis": "^4.7.0",
-    "winston": "^3.15.0"
+    "winston": "^3.15.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.8.1",
+    "@types/pg": "^8.15.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }
