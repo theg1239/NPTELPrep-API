@@ -1,6 +1,11 @@
-import { fetchCourseDetail, type Assignment, type AssignmentQuestion, type CourseDetail } from './dataSources.js';
-import type { ChangeOperation } from './operations.js';
-import type { StagedChange } from './stagedChanges.js';
+import {
+  fetchCourseDetail,
+  type Assignment,
+  type AssignmentQuestion,
+  type CourseDetail,
+} from '../data/dataSources.js';
+import type { ChangeOperation } from '../data/operations.js';
+import type { StagedChange } from '../changes/stagedChanges.js';
 
 type OptionSnapshot = {
   optionNumber: string;

@@ -1,8 +1,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { config } from './config.js';
-import { agentLogger } from './logger.js';
-import type { ChangeOperation } from './operations.js';
+import { config } from '../config/index.js';
+import { agentLogger } from '../logging/logger.js';
+import type { ChangeOperation } from '../data/operations.js';
 
 export type StageChangePayload = {
   courseCode: string;

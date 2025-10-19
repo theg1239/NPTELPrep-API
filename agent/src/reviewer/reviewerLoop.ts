@@ -10,9 +10,9 @@ import type {
   LanguageModelV2ToolResultOutput,
 } from '@ai-sdk/provider';
 import { z } from 'zod';
-import { agentLogger } from './logger.js';
-import { reviewerGoogleClient } from './googleClient.js';
-import { config } from './config.js';
+import { agentLogger } from '../logging/logger.js';
+import { reviewerGoogleClient } from '../clients/googleClient.js';
+import { config } from '../config/index.js';
 import {
   archiveChange,
   annotateChangeWithReview,
@@ -20,19 +20,19 @@ import {
   listPendingChanges,
   type StagedChange,
   type ChangeDisposition,
-} from './stagedChanges.js';
-import { applyOperations, fetchReportedQuestions } from './dataSources.js';
-import { reviewerTools } from './tools.js';
+} from '../changes/stagedChanges.js';
+import { applyOperations, fetchReportedQuestions } from '../data/dataSources.js';
+import { reviewerTools } from '../tools/index.js';
 import {
   computeReviewerAnalysis,
   formatAnalysisForPrompt,
   prepareAnalysisForPersistence,
   type ReviewerAnalysis,
-} from './reviewerAnalysis.js';
+} from './analysis.js';
 import {
   writeReviewerReport,
   type ReviewerOutcome as ReviewerOutcomeSummary,
-} from './reviewerReportWriter.js';
+} from './reportWriter.js';
 
 const REVIEWER_OUTPUT_SCHEMA = z.object({
   decision: z.enum(['apply', 'reject']),

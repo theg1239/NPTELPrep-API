@@ -1,6 +1,6 @@
 import pkg from 'pg';
-import { agentLogger } from './logger.js';
-import { config } from './config.js';
+import { agentLogger } from '../logging/logger.js';
+import { config } from '../config/index.js';
 import type { ChangeOperation } from './operations.js';
 
 const { Pool } = pkg;

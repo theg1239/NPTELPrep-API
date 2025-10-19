@@ -4,9 +4,9 @@ import {
   fetchCourseDetail,
   fetchReportedQuestions,
   applyOperations,
-} from './dataSources.js';
-import { stageChange } from './changeStager.js';
-import { changeOperationSchema } from './operations.js';
+} from '../data/dataSources.js';
+import { stageChange } from '../changes/changeStager.js';
+import { changeOperationSchema } from '../data/operations.js';
 
 export const fetchCourseTool = tool({
   description:

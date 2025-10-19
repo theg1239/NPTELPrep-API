@@ -1,9 +1,9 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { config } from './config.js';
-import { agentLogger } from './logger.js';
-import type { ChangeDisposition, StagedChange } from './stagedChanges.js';
-import type { ReviewerPersistedAnalysis, QuestionSnapshot } from './reviewerAnalysis.js';
+import { config } from '../config/index.js';
+import { agentLogger } from '../logging/logger.js';
+import type { ChangeDisposition, StagedChange } from '../changes/stagedChanges.js';
+import type { ReviewerPersistedAnalysis, QuestionSnapshot } from './analysis.js';
 
 type ToolExecutionRecord = {
   toolName: string;

@@ -1,8 +1,8 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { config } from './config.js';
-import type { ReviewerPersistedAnalysis } from './reviewerAnalysis.js';
-import { changeOperationSchema, type ChangeOperation } from './operations.js';
+import { config } from '../config/index.js';
+import type { ReviewerPersistedAnalysis } from '../reviewer/analysis.js';
+import { changeOperationSchema, type ChangeOperation } from '../data/operations.js';
 
 export type RawStagedChange = {
   createdAt?: string;

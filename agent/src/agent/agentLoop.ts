@@ -11,16 +11,16 @@ import type {
 } from '@ai-sdk/provider';
 import { z } from 'zod';
 import pRetry from 'p-retry';
-import { agentLogger } from './logger.js';
+import { agentLogger } from '../logging/logger.js';
 import {
   fetchCourses,
   fetchReportedQuestions,
   type CourseSummary,
   type ReportedQuestion,
-} from './dataSources.js';
-import { agentTools } from './tools.js';
-import { agentGoogleClient } from './googleClient.js';
-import { config } from './config.js';
+} from '../data/dataSources.js';
+import { agentTools } from '../tools/index.js';
+import { agentGoogleClient } from '../clients/googleClient.js';
+import { config } from '../config/index.js';
 
 type WorkItem = {
   courseCode: string;

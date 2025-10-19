@@ -1,7 +1,7 @@
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import type { LanguageModel } from 'ai';
-import { agentLogger } from './logger.js';
-import { config } from './config.js';
+import { agentLogger } from '../logging/logger.js';
+import { config } from '../config/index.js';
 
 type ModelRunner<T> = (model: LanguageModel) => Promise<T>;
 
