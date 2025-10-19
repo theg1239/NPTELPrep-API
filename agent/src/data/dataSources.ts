@@ -711,6 +711,26 @@ const ensureQuestionBelongsToCourse = async (
 
 const normalizeOptionLabel = (value: string): string => value.trim().toUpperCase();
 
+const buildOptionNumberCandidates = (value: string): string[] => {
+  const normalized = normalizeOptionLabel(value);
+  const candidates = new Set<string>();
+  if (normalized.length > 0) {
+    candidates.add(normalized);
+  }
+
+  const withoutTrailingDots = normalized.replace(/\.+$/, '');
+  if (withoutTrailingDots.length > 0) {
+    candidates.add(withoutTrailingDots);
+  }
+
+  if (/^[A-Z0-9]+$/.test(withoutTrailingDots || normalized)) {
+    const base = withoutTrailingDots || normalized;
+    candidates.add(`${base}.`);
+  }
+
+  return Array.from(candidates);
+};
+
 const normalizeIdInput = (value: string | number): string =>
   typeof value === 'string' ? value : Math.trunc(value).toString();
 
@@ -774,10 +794,11 @@ const applyOperation = async (
       return undefined;
     }
     case 'delete_option': {
+      const optionLabels = buildOptionNumberCandidates(operation.optionNumber);
       const result = await client.query(
         `DELETE FROM options
-         WHERE question_id = $1 AND option_number = $2`,
-        [questionIdDb, normalizeOptionLabel(operation.optionNumber)]
+         WHERE question_id = $1 AND option_number = ANY($2::text[])`,
+        [questionIdDb, optionLabels]
       );
 
       if (result.rowCount === 0) {
