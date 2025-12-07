@@ -28,7 +28,7 @@ export default function DashboardLayout({
 }
 
 async function SessionGuard({ children }: { children: React.ReactNode }) {
-  const headerList = headers();
+  const headerList = await headers();
   let requestedPath = headerList.get("x-invoke-path") ?? "";
   if (!requestedPath) {
     const middlewareUrl = headerList.get("x-middleware-request-url");
